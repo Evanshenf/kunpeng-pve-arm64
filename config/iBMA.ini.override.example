@@ -1,4 +1,5 @@
-# 将以下项目合并到厂商提供的完整 iBMA.ini；本文件不能独立使用。
+# 合并到厂商提供的完整 iBMA.ini；本文件不能独立使用。
+# Merge into the complete vendor-provided iBMA.ini; this file is not standalone.
 iBMA_network_type=veth
 iBMA_kbox=false
 iBMA_support_config_rules=false

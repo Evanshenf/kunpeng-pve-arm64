@@ -1,5 +1,7 @@
 # PVE ARM64 安装与验收
 
+[中文](pve-arm64-install.md) | [English](en/pve-arm64-install.md)
+
 ## 1. 适用范围
 
 本文面向具备 UEFI、ACPI、SMMUv3 和 ARM KVM 的鲲鹏服务器。正式安装前应

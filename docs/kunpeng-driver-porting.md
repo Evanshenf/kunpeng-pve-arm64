@@ -1,5 +1,7 @@
 # BMA 与 HiBMC 驱动适配
 
+[中文](kunpeng-driver-porting.md) | [English](en/kunpeng-driver-porting.md)
+
 ## 1. 源码边界
 
 BMA 和 HiBMC DRM 驱动源码存在于 openEuler 内核源码中；iBMA 的

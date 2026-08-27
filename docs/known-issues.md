@@ -1,5 +1,7 @@
 # 已知问题与上游 Bug
 
+[中文](known-issues.md) | [English](en/known-issues.md)
+
 ## 1. qemu-server 在 ARM64 发送 x86 属性
 
 现象：
@@ -42,7 +44,7 @@ initramfs。是否采用该规避必须以实机调用栈和模块验证结果�
 
 ```sh
 grep -E 'CmaTotal|CmaFree' /proc/meminfo
-find /sys/kernel/mm/cma -type f -maxdepth 2 -print -exec cat {} \;
+find /sys/kernel/mm/cma -maxdepth 2 -type f -print -exec cat {} \;
 ```
 
 要求 `CmaFree <= CmaTotal`，且 `alloc_pages_fail` 为 0 或经过明确评估。

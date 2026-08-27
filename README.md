@@ -1,5 +1,7 @@
 # Kunpeng PVE ARM64 实践与驱动适配
 
+[中文](README.md) | [English](README_EN.md)
+
 本仓库记录在鲲鹏 920 服务器上部署 Proxmox VE ARM64、适配 openEuler
 BMA/HiBMC 内核驱动、部署 iBMA 用户态以及排查 ARM64 专有问题的实测流程。
 

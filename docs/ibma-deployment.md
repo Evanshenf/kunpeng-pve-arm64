@@ -1,5 +1,7 @@
 # iBMA 部署与回滚
 
+[中文](ibma-deployment.md) | [English](en/ibma-deployment.md)
+
 ## 1. 软件边界
 
 iBMA 用户态不是 openEuler 内核源码的一部分。请从服务器厂商支持渠道合法
