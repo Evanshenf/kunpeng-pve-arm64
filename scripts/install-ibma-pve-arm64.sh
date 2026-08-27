@@ -5,12 +5,13 @@ usage() {
     cat <<'EOF'
 用法：
   install-ibma-pve-arm64.sh --runtime-dir DIR --modules-dir DIR \
-    [--config-file FILE] [--start]
+    [--config-file FILE] [--with-hibmc] [--start]
 
 参数：
   --runtime-dir  已合法取得并解压的 iBMA 用户态目录。
   --modules-dir  针对当前 PVE 内核编译的 BMA 模块目录。
   --config-file  已审核的完整 iBMA.ini；省略时保留厂商运行目录中的配置。
+  --with-hibmc   同时安装可选的 drm_vram_helper 和 hibmc_drm，重启后生效。
   --start        安装完成后立即启动；默认只安装并启用开机启动。
 EOF
 }
@@ -18,6 +19,7 @@ EOF
 runtime_dir=""
 modules_dir=""
 config_file=""
+with_hibmc=false
 start_now=false
 
 while (($#)); do
@@ -33,6 +35,10 @@ while (($#)); do
         --config-file)
             config_file="${2:-}"
             shift 2
+            ;;
+        --with-hibmc)
+            with_hibmc=true
+            shift
             ;;
         --start)
             start_now=true
@@ -64,7 +70,9 @@ repo_root=$(cd "$script_dir/.." && pwd)
 service_file="$repo_root/systemd/iBMA.service"
 kernel=$(uname -r)
 module_target="/lib/modules/$kernel/updates/iBMA_driver"
+hibmc_target="/lib/modules/$kernel/updates/HiBMC_driver"
 required_modules=(host_edma_drv host_cdev_drv host_veth_drv cdev_veth_drv host_kbox_drv)
+hibmc_modules=(drm_vram_helper hibmc-drm)
 required_commands=(modinfo depmod systemctl ipmitool dmidecode setfacl netstat ifconfig)
 
 [[ -f "$runtime_dir/iBMA.sh" ]] || { echo "无效用户态目录：$runtime_dir" >&2; exit 1; }
@@ -82,6 +90,18 @@ for command_name in "${required_commands[@]}"; do
         exit 1
     }
 done
+
+if $with_hibmc; then
+    for module_name in "${hibmc_modules[@]}"; do
+        module_file="$modules_dir/$module_name.ko"
+        [[ -f $module_file ]] || { echo "缺少可选模块：$module_file" >&2; exit 1; }
+        module_kernel=$(modinfo -F vermagic "$module_file" | awk '{print $1}')
+        [[ $module_kernel == "$kernel" ]] || {
+            echo "$module_name vermagic=$module_kernel，与当前内核 $kernel 不匹配。" >&2
+            exit 1
+        }
+    done
+fi
 
 for module_name in "${required_modules[@]}"; do
     module_file="$modules_dir/$module_name.ko"
@@ -109,6 +129,19 @@ for module_name in "${required_modules[@]}"; do
 done
 depmod -a "$kernel"
 
+if $with_hibmc; then
+    install -d -m 0755 "$hibmc_target"
+    for module_name in "${hibmc_modules[@]}"; do
+        install -o root -g root -m 0644 "$modules_dir/$module_name.ko" "$hibmc_target/"
+    done
+    printf '%s\n' \
+        '# Optional native HiBMC VGA driver.' \
+        'hibmc_drm' \
+        > /etc/modules-load.d/hibmc-drm.conf
+    chmod 0644 /etc/modules-load.d/hibmc-drm.conf
+    depmod -a "$kernel"
+fi
+
 install -d -m 0755 /opt
 cp -a "$runtime_dir" /opt/ibma
 if [[ -n $config_file ]]; then
@@ -125,3 +158,6 @@ if $start_now; then
 fi
 
 echo "iBMA 文件已安装。回滚基准目录：$backup_root"
+if $with_hibmc; then
+    echo "HiBMC DRM 已安装为可选启动模块；请在带外控制台可用时安排重启验证。"
+fi

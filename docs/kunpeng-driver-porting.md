@@ -25,8 +25,9 @@ kernel-6.6.0-145.3.26.157.oe2403sp3.src.rpm
 | `host_kbox_drv` | KBOX，可选 |
 | `hibmc_drm` | BMC VGA DRM 驱动，匹配 `19e5:1711` |
 
-HiBMC DRM 不是 iBMA 必需模块。PVE 已通过 UEFI GOP/simpledrm 提供控制台
-时，不应仅为了 iBMA 强行加载 `hibmc_drm`。
+HiBMC DRM 不是 BMA EDMA/VETH 的直接依赖，但可作为完整原生显示能力的
+可选模块。PVE 已通过 UEFI GOP/simpledrm 提供基础控制台时，应在带外恢复
+通道可用的维护窗口切换，避免未验证驱动导致控制台暂时不可用。
 
 ## 3. Linux 7.0 兼容修改
 
@@ -95,6 +96,15 @@ lspci -nnk -d 19e5:1710
 ls -l /dev/hwibmc*
 ip -br link show veth
 dmesg | grep -Ei 'edma|ibma|unknown symbol|oops|call trace'
+```
+
+启用 HiBMC 后还应验证：
+
+```sh
+lspci -nnk -d 19e5:1711
+cat /proc/fb
+cat /sys/class/graphics/fb0/name
+cat /sys/class/drm/card*-*/status
 ```
 
 ## 7. 内核升级

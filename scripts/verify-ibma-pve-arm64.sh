@@ -10,6 +10,19 @@ for module_name in host_edma_drv host_cdev_drv host_veth_drv cdev_veth_drv host_
     fi
 done
 
+echo "== 可选 HiBMC DRM =="
+if [[ -d /sys/module/hibmc_drm ]]; then
+    lspci -nnk -d 19e5:1711 || true
+    cat /proc/fb 2>/dev/null || true
+    cat /sys/class/graphics/fb0/name 2>/dev/null || true
+    for status_file in /sys/class/drm/card*-*/status; do
+        [[ -e $status_file ]] || continue
+        echo "$status_file: $(cat "$status_file")"
+    done
+else
+    echo "hibmc_drm: not-loaded（不影响 BMA EDMA/VETH 主链）"
+fi
+
 echo "== PCI 设备 =="
 lspci -nnk -d 19e5:1710 || true
 

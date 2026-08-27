@@ -13,6 +13,7 @@ BMA/HiBMC 内核驱动、部署 iBMA 用户态以及排查 ARM64 专有问题的
 | QEMU | `pve-qemu-kvm 11.0.3-1` |
 | iBMA 用户态 | 2.20.0，闭源交付，不在本仓库分发 |
 | BMA 驱动 | 0.4.0，由 openEuler 内核源码适配构建 |
+| HiBMC DRM | 可选，`hibmcdrmfb` 与 BMC 截图验证通过 |
 | 虚拟化 | ARM KVM、AAVMF、PVE VM 和 LXC 均通过 |
 
 该组合不是 Proxmox 或服务器厂商对所有鲲鹏机型的正式兼容承诺。内核、

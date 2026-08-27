@@ -60,8 +60,13 @@ sudo ./scripts/install-ibma-pve-arm64.sh \
   --runtime-dir /path/to/vendor/ibma \
   --modules-dir /path/to/modules \
   --config-file /path/to/iBMA.ini \
+  --with-hibmc \
   --start
 ```
+
+`--with-hibmc` 是可选项。BMA EDMA/VETH 主链不直接依赖 DRM；需要恢复
+原生 Hi1711 显示驱动时再指定。脚本只安装并配置开机加载，不在当前会话中
+强制替换 framebuffer，必须通过受控重启完成切换。
 
 脚本会：
 
@@ -89,6 +94,13 @@ ibmacli version
 - BMC 显示 OS、内核、iBMA 和驱动版本；
 - PVE 管理桥、默认路由、VM/LXC 不受影响。
 
+启用 `--with-hibmc` 时还应确认：
+
+- `19e5:1711` 绑定 `hibmc-drm`；
+- `/proc/fb` 显示 `hibmcdrmfb`；
+- DRM 连接器状态为 `connected`；
+- BMC KVM 或截图功能仍可正常读取画面。
+
 ## 6. 已知 2.20 提示
 
 在较新的 BMC 上，2.20 启动时可能出现一次旧 IPMI 扩展命令返回格式告警。
@@ -109,3 +121,7 @@ sudo ./scripts/rollback-ibma-pve-arm64.sh
 回滚脚本不会直接删除文件，而是停止服务、反向卸载模块，并将用户态、
 service 和模块目录移动到 root 私有隔离目录。模块因占用无法卸载时，不要
 强制操作，应保留现场并在维护窗口重启。
+
+`hibmc_drm` 正在提供 framebuffer 时，回滚脚本不会在线强制卸载，只会
+移除下次启动的持久配置并要求正常重启，让 firmware framebuffer/
+`simpledrm` 重新接管。
