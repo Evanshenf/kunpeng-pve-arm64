@@ -1,0 +1,12 @@
+--- a/usr/share/perl5/PVE/QemuServer.pm
++++ b/usr/share/perl5/PVE/QemuServer.pm
+@@ -3023,7 +3023,8 @@
+         die "QEMU flag querying VM exited with code " . $rc if $rc;
+ 
+         my $model = { name => $kvm ? 'host' : 'max' };
+-        $model->{props} = { 'hv-passthrough' => JSON::true } if $kvm;
++        $model->{props} = { 'hv-passthrough' => JSON::true }
++            if $kvm && $arch eq 'x86_64';
+ 
+         eval {
+             my $cmd_result = mon_cmd(

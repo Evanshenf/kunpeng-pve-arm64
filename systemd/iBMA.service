@@ -1,0 +1,20 @@
+[Unit]
+Description=iBMA host management service
+Wants=network-online.target
+After=network-online.target
+Conflicts=shutdown.target
+
+[Service]
+Type=forking
+RemainAfterExit=yes
+Restart=no
+TimeoutStartSec=10min
+TimeoutStopSec=10min
+IgnoreSIGPIPE=no
+KillMode=process
+CPUQuota=100%
+ExecStart=/opt/ibma/iBMA.sh start
+ExecStop=/opt/ibma/iBMA.sh stop
+
+[Install]
+WantedBy=multi-user.target
