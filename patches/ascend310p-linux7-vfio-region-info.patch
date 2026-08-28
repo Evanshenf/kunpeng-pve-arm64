@@ -1,0 +1,113 @@
+diff -ruN --no-dereference a/kernel/vascend_drv/kvmdt.c b/kernel/vascend_drv/kvmdt.c
+--- a/kernel/vascend_drv/kvmdt.c	2026-08-28 12:10:36.252553577 +0000
++++ b/kernel/vascend_drv/kvmdt.c	2026-08-28 12:09:54.886776764 +0000
+@@ -1045,6 +1045,63 @@
+     return ret;
+ }
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)
++int hw_vdavinci_get_region_info_caps(struct hw_vdavinci *vdavinci,
++                                     struct vfio_region_info *info,
++                                     struct vfio_info_cap *caps)
++{
++    u64 i;
++    int ret;
++    unsigned int map_num = 0;
++    size_t sparse_size;
++    struct vdavinci_bar_map *map;
++    struct vdavinci_mapinfo *mmio_map_info;
++    struct vfio_region_info_cap_sparse_mmap *sparse;
++
++    if (vdavinci == NULL || info == NULL || caps == NULL) {
++        return -EINVAL;
++    }
++
++    ret = hw_vdavinci_device_get_bar_info(vdavinci, info);
++    if (ret != 0) {
++        return ret;
++    }
++
++    mmio_map_info = hw_vdavinci_get_bar_sparse(vdavinci, info->index);
++    if (mmio_map_info == NULL) {
++        return 0;
++    }
++
++    for (i = 0; i < mmio_map_info->num; i++) {
++        map = &mmio_map_info->map_info[i];
++        if (map->map_type == MAP_TYPE_BACKEND ||
++            map->map_type == MAP_TYPE_PASSTHROUGH) {
++            map_num++;
++        }
++    }
++
++    if (map_num == 0) {
++        return 0;
++    }
++
++    sparse = hw_vdavinci_device_get_sparse_info(mmio_map_info, map_num);
++    if (sparse == NULL) {
++        return -ENOMEM;
++    }
++
++    sparse_size = sizeof(*sparse) +
++                  sparse->nr_areas * sizeof(sparse->areas[0]);
++    ret = vfio_info_add_capability(caps, &sparse->header, sparse_size);
++    kfree(sparse);
++    if (ret != 0) {
++        return ret;
++    }
++
++    info->flags |= VFIO_REGION_INFO_FLAG_MMAP;
++    return 0;
++}
++#endif
++
+ STATIC long _hw_vdavinci_device_get_region_info(uintptr_t arg,
+                                                 struct hw_vdavinci* vdavinci)
+ {
+diff -ruN --no-dereference a/kernel/vascend_drv/kvmdt.h b/kernel/vascend_drv/kvmdt.h
+--- a/kernel/vascend_drv/kvmdt.h	2026-08-28 12:10:36.498552262 +0000
++++ b/kernel/vascend_drv/kvmdt.h	2026-08-28 11:31:25.714863687 +0000
+@@ -98,6 +98,11 @@
+ int hw_vdavinci_mmap(struct mdev_device *mdev, struct vm_area_struct *vma);
+ long hw_vdavinci_ioctl(struct mdev_device *mdev, unsigned int cmd,
+                        unsigned long arg);
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)
++int hw_vdavinci_get_region_info_caps(struct hw_vdavinci *vdavinci,
++                                     struct vfio_region_info *info,
++                                     struct vfio_info_cap *caps);
++#endif
+ static inline bool hw_vdavinci_is_support_normal_nc(void)
+ {
+ #ifdef VM_ALLOW_ANY_UNCACHED
+diff -ruN --no-dereference a/kernel/vascend_drv/vfio_ops.c b/kernel/vascend_drv/vfio_ops.c
+--- a/kernel/vascend_drv/vfio_ops.c	2026-08-28 12:10:36.744550948 +0000
++++ b/kernel/vascend_drv/vfio_ops.c	2026-08-28 11:31:25.727863756 +0000
+@@ -429,6 +429,17 @@
+     return hw_vdavinci_ioctl(mdev, cmd, arg);
+ }
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)
++STATIC int hw_vdavinci_vfio_get_region_info_caps(struct vfio_device *vfio_dev,
++                                                  struct vfio_region_info *info,
++                                                  struct vfio_info_cap *caps)
++{
++    struct hw_vdavinci *vdavinci = vfio_dev_to_vnpu(vfio_dev);
++
++    return hw_vdavinci_get_region_info_caps(vdavinci, info, caps);
++}
++#endif
++
+ STATIC void hw_vdavinci_vfio_dma_unmap(struct vfio_device *vfio_dev,
+                                        u64 iova, u64 length)
+ {
+@@ -453,6 +464,9 @@
+     .mmap = hw_vdavinci_vfio_mmap,
+     .dma_unmap = hw_vdavinci_vfio_dma_unmap,
+     .ioctl = hw_vdavinci_vfio_ioctl,
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)
++    .get_region_info_caps = hw_vdavinci_vfio_get_region_info_caps,
++#endif
+     .bind_iommufd	= vfio_iommufd_emulated_bind,
+     .unbind_iommufd = vfio_iommufd_emulated_unbind,
+     .attach_ioas	= vfio_iommufd_emulated_attach_ioas,

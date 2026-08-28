@@ -10,7 +10,8 @@ device（mdev）分配给 PVE 虚拟机的完整方法。
 
 已完成的实机闭环包括：SMMU/IOMMU 识别、26.1.1 驱动编译安装、33 个 DKMS
 模块生成、`mdev.ko`/`drv_vascend` 加载、vNPU 类型枚举、mdev 创建与删除、
-IOMMU group 建立、重启后 VM 模式恢复，以及 PVE 服务健康检查。
+IOMMU group 建立、QEMU 11 Guest 启动、openEuler Guest 驱动识别、重启后 VM
+模式恢复，以及 PVE 服务健康检查。
 
 这是一份特定组合的工程验证结果，不是华为或 Proxmox 对所有机型、内核和
 固件版本的兼容承诺。
@@ -22,11 +23,13 @@ IOMMU group 建立、重启后 VM 模式恢复，以及 PVE 服务健康检查�
 | 架构 | AArch64，双路 Kunpeng 920 |
 | PVE | 9.2.9 ARM64 |
 | 内核 | `7.0.14-6-pve` |
+| QEMU | `pve-qemu-kvm 11.0.3-1` |
 | 加速卡 | 2 张 Atlas 300I Duo |
 | PCI ID | `19e5:d500` |
 | 驱动输入 | 官方 `ascend310p-driver 26.1.1 arm64` Debian 包 |
 | 固件 | 实测版本与驱动兼容性检查为 `OK`；固件未由本流程升级 |
 | 虚拟化接口 | SMMUv3、IOMMU、VFIO、mdev、PVE `hostpci.mdev` |
+| Guest | openEuler 24.03 LTS SP3，25.2.0 `vnpu_guest` 驱动 |
 
 ## 3. 数据路径
 
@@ -52,9 +55,12 @@ PVE 的 mdev 配置形式也可参考其
 2. 实测 PVE 内核没有启用 `CONFIG_VFIO_MDEV`，因此不提供 `mdev.ko`。
 3. Ascend 26.1.1 源码使用了旧 Kbuild、KVM、IOMMU、timer、PFN 和页表接口，
    不能直接针对 Linux 7.0 编译。
-4. 厂商安装器不能识别 `proxmox-headers-*`，并会丢失 Debian GCC 内建头文件
+4. Linux 7 的 VFIO core 不再把 `VFIO_DEVICE_GET_REGION_INFO` 转发给厂商
+   `.ioctl`，而是要求新的 `.get_region_info_caps` 回调；缺少回调时 QEMU 在
+   region 0 返回 `EINVAL`。
+5. 厂商安装器不能识别 `proxmox-headers-*`，并会丢失 Debian GCC 内建头文件
    路径。
-5. 310P 重启后默认回到容器模式，未切换 VM 模式时虽能看到
+6. 310P 重启后默认回到容器模式，未切换 VM 模式时虽能看到
    `mdev_supported_types`，但 `available_instances` 为 0。
 
 ## 5. 补丁内容
@@ -69,9 +75,14 @@ PVE 的 mdev 配置形式也可参考其
 - 将 IRQ bypass 注册迁移到 Linux 7 的 eventfd + irq 接口。
 - 使用 KVM memslot 与 `pin_user_pages_remote()` 替代不再导出的
   `gfn_to_pfn()`、`kvm_release_pfn_clean()` 和 `kvm_is_visible_gfn()`。
+- 为 Linux 7 增加 `.get_region_info_caps`，复用厂商 BAR 和 sparse-map 数据，
+  由 VFIO core 生成 capability chain，使 QEMU 11 能读取全部 region。
 - 在目标内核缺少 mdev 时，加入 Linux stable `v7.0.14` 的原生 mdev 核心，
   作为同一 DKMS 工程的兼容模块；mdev 实现本身未做功能修改。
 - 识别 PVE 的内核 headers，并保留 Debian GCC 的内建 include 路径。
+
+Linux 7 VFIO region 修复也提供独立补丁，便于已部署 `v0.2.0` 基线增量审查：
+[`ascend310p-linux7-vfio-region-info.patch`](../patches/ascend310p-linux7-vfio-region-info.patch)。
 
 ## 6. 前置条件
 
@@ -99,7 +110,7 @@ git clone https://github.com/Evanshenf/kunpeng-pve-arm64.git
 cd kunpeng-pve-arm64
 sudo ./scripts/build-ascend310p-pve-package.sh \
     /path/to/ascend310p-driver_26.1.1_arm64.deb
-sudo dpkg -i ./ascend310p-driver_26.1.1+pve7.0.14.3_arm64.deb
+sudo dpkg -i ./ascend310p-driver_26.1.1+pve7.0.14.4_arm64.deb
 ```
 
 脚本会检查包名、版本和架构，补丁应用失败时立即退出，不会修改输入包。
@@ -164,11 +175,13 @@ test ! -e "/sys/bus/mdev/devices/$UUID"
 ### 9.4 交给 PVE 管理生命周期
 
 ```bash
-qm set <VMID> -hostpci0 <BDF>,mdev=vnpu-vir01,pcie=1
+qm set <VMID> -hostpci0 <BDF>,mdev=vnpu-vir01
 ```
 
 PVE 会随 VM 启停创建和删除 mdev。不要同时把同一物理功能作为整卡直通给
 其他 VM。Guest 内仍需安装与宿主驱动匹配的 Ascend vNPU guest 驱动和运行时。
+ARM `virt` 机型不要添加 `pcie=1`；该参数在 PVE 中要求 x86 q35，会导致
+`q35 machine model is not enabled`。
 
 ## 10. 常见问题
 
@@ -178,6 +191,8 @@ PVE 会随 VM 启停创建和删除 mdev。不要同时把同一物理功能作�
 | PCI BAR 分配失败 | 固件 PCIe 窗口、64 位 MMIO、`pci=realloc` 和平台资源规划 |
 | 安装器提示找不到 headers | `proxmox-headers-$(uname -r)` 是否安装，`/lib/modules/.../build` 是否有效 |
 | 编译出现旧 KVM/IOMMU API 错误 | 驱动是否为 26.1.1，运行内核是否仍为已验证版本，补丁是否完整应用 |
+| QEMU 报 `failed to get region 0 info` | 检查驱动是否实现 Linux 7 `.get_region_info_caps`；应用本仓库 v0.2.1 补丁 |
+| ARM 启动报 q35 未启用 | 删除 `hostpci` 中的 `pcie=1`，ARM `virt` 不使用 x86 q35 |
 | 没有 `mdev.ko` | 检查目标内核 `CONFIG_VFIO_MDEV`；本补丁仅为缺少该模块的基线提供兼容实现 |
 | `available_instances=0` | `npu-smi` VM 模式、`chip_id` 就绪状态及 systemd 服务日志 |
 | VM 内看不到设备 | PVE `hostpci.mdev`、Guest vNPU 驱动、IOMMU group 和 PF 复用冲突 |
@@ -188,8 +203,9 @@ PVE 会随 VM 启停创建和删除 mdev。不要同时把同一物理功能作�
   驱动升级都必须重新编译并执行 mdev 创建、删除、VM 启停和异常回收测试。
 - 如果后续 PVE 内核原生启用 `CONFIG_VFIO_MDEV`，应删除兼容 mdev 模块，避免
   与内核原生实现重名。
-- 生产前还需在目标 Guest 中验证业务压力、宿主重启、VM 异常退出、资源回收
-  和多租户隔离。本次验证没有替代应用层验收。
+- 已验证 openEuler Guest 启动、虚拟 PCI BAR、25.2.0 `vnpu_guest` 驱动和
+  `npu-smi Health: OK`。生产前仍需验证模型压力、宿主重启、VM 异常退出、
+  资源回收和多租户隔离。
 - 官方 Ascend 文档中的 VM 模式命令为
   `npu-smi set -t vnpu-mode -d 1`，可参考
   [Atlas 虚拟机配置指南](https://www.hiascend.com/doc_center/source/zh/Atlas%20200I%20A2/24.1.RC1/re/virtualmachineconfiguration/%E8%99%9A%E6%8B%9F%E6%9C%BA%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97-24.1.RC1.pdf)。

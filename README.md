@@ -26,7 +26,7 @@ BMA/HiBMC 内核驱动、部署 iBMA 用户态，以及让 Atlas 300I Duo
 | BMA 驱动 | 0.4.0，由 openEuler 内核源码适配构建 |
 | HiBMC DRM | 可选，`hibmcdrmfb` 与 BMC 截图验证通过 |
 | NPU | 2 张 Atlas 300I Duo，4 个 Ascend 310P3 逻辑设备 |
-| vNPU | SMMU/IOMMU、mdev 创建删除、PVE 配置闭环通过 |
+| vNPU | SMMU/IOMMU、mdev、QEMU 11 Guest 启动和 vNPU Guest 驱动识别通过 |
 | 虚拟化 | ARM KVM、AAVMF、PVE VM 和 LXC 均通过 |
 
 该组合不是 Proxmox 或服务器厂商对所有鲲鹏机型的正式兼容承诺。内核、

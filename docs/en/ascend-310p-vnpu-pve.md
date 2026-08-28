@@ -11,7 +11,8 @@ The validated host contained two cards and four logical Ascend 310P3 devices.
 The end-to-end validation covered SMMU/IOMMU discovery, driver build and
 installation, 33 DKMS modules, `mdev.ko` and `drv_vascend`, vNPU type discovery,
 mdev create/remove, IOMMU group creation, VM-mode persistence after reboot, and
-PVE service health.
+PVE service health. QEMU 11 guest boot and the openEuler vNPU guest driver were
+also validated.
 
 This is a validated engineering baseline, not a compatibility commitment from
 Huawei or Proxmox for every platform, firmware, or kernel.
@@ -23,11 +24,13 @@ Huawei or Proxmox for every platform, firmware, or kernel.
 | Architecture | AArch64, dual-socket Kunpeng 920 |
 | PVE | 9.2.9 ARM64 |
 | Kernel | `7.0.14-6-pve` |
+| QEMU | `pve-qemu-kvm 11.0.3-1` |
 | Accelerators | Two Atlas 300I Duo cards |
 | PCI ID | `19e5:d500` |
 | Driver input | Official `ascend310p-driver 26.1.1 arm64` Debian package |
 | Firmware | Driver compatibility check returned `OK`; firmware was not flashed |
 | Virtualization | SMMUv3, IOMMU, VFIO, mdev, and PVE `hostpci.mdev` |
+| Guest | openEuler 24.03 LTS SP3 with the 25.2.0 `vnpu_guest` driver |
 
 ## 3. Architecture
 
@@ -53,9 +56,12 @@ and the PVE [mdev configuration example](https://pve.proxmox.com/wiki/NVIDIA_vGP
 2. The tested PVE kernel did not provide `CONFIG_VFIO_MDEV` or `mdev.ko`.
 3. Ascend 26.1.1 still used older Kbuild, KVM, IOMMU, timer, PFN, and page-table
    APIs that no longer compiled on Linux 7.0.
-4. The vendor installer did not recognize `proxmox-headers-*` and removed the
+4. Linux 7 VFIO core no longer forwards `VFIO_DEVICE_GET_REGION_INFO` to the
+   vendor `.ioctl`; it requires `.get_region_info_caps`. Without it, QEMU fails
+   on region 0 with `EINVAL`.
+5. The vendor installer did not recognize `proxmox-headers-*` and removed the
    Debian GCC built-in include path.
-5. Ascend 310P boots in container mode. Before VM mode is selected, supported
+6. Ascend 310P boots in container mode. Before VM mode is selected, supported
    types may exist while `available_instances` remains zero.
 
 ## 5. Patch Scope
@@ -70,9 +76,15 @@ implements the following changes:
 - Migrates IRQ bypass registration to the Linux 7 eventfd + IRQ interface.
 - Replaces unexported KVM GFN helpers with memslot lookup and
   `pin_user_pages_remote()`.
+- Implements Linux 7 `.get_region_info_caps` using the existing vendor BAR and
+  sparse-map data so QEMU 11 can query every VFIO region.
 - Builds the unmodified mdev core from Linux stable `v7.0.14` as part of the
   same DKMS project when the target kernel does not provide it.
 - Recognizes PVE kernel headers and preserves Debian GCC built-in includes.
+
+An incremental patch is also provided for reviewing or updating an existing
+v0.2.0 deployment:
+[`ascend310p-linux7-vfio-region-info.patch`](../../patches/ascend310p-linux7-vfio-region-info.patch).
 
 ## 6. Prerequisites
 
@@ -101,7 +113,7 @@ git clone https://github.com/Evanshenf/kunpeng-pve-arm64.git
 cd kunpeng-pve-arm64
 sudo ./scripts/build-ascend310p-pve-package.sh \
     /path/to/ascend310p-driver_26.1.1_arm64.deb
-sudo dpkg -i ./ascend310p-driver_26.1.1+pve7.0.14.3_arm64.deb
+sudo dpkg -i ./ascend310p-driver_26.1.1+pve7.0.14.4_arm64.deb
 ```
 
 The script validates package name, version, and architecture. It exits on a
@@ -161,12 +173,13 @@ test ! -e "/sys/bus/mdev/devices/$UUID"
 Delegate lifecycle management to PVE:
 
 ```bash
-qm set <VMID> -hostpci0 <BDF>,mdev=vnpu-vir01,pcie=1
+qm set <VMID> -hostpci0 <BDF>,mdev=vnpu-vir01
 ```
 
 Do not assign the same physical function as a full PCI passthrough device at
 the same time. The guest still requires a compatible Ascend vNPU guest driver
-and runtime.
+and runtime. Do not add `pcie=1` on an ARM `virt` machine; PVE associates that
+option with the x86 q35 machine type.
 
 ## 10. Troubleshooting
 
@@ -176,6 +189,8 @@ and runtime.
 | PCI BAR allocation failure | Firmware MMIO windows, 64-bit MMIO, `pci=realloc`, and platform resource layout |
 | Installer cannot find headers | Matching `proxmox-headers-*` and `/lib/modules/.../build` |
 | Old KVM/IOMMU API build errors | Exact driver/kernel versions and complete patch application |
+| QEMU reports `failed to get region 0 info` | Apply the v0.2.1 Linux 7 `.get_region_info_caps` fix |
+| ARM startup reports q35 is not enabled | Remove `pcie=1`; ARM `virt` does not use x86 q35 |
 | No `mdev.ko` | Target `CONFIG_VFIO_MDEV`; this patch only supplies mdev for the validated missing-module baseline |
 | `available_instances=0` | `npu-smi` VM mode, `chip_id` readiness, and service logs |
 | Device absent in the guest | PVE `hostpci.mdev`, guest driver, IOMMU group, and PF ownership conflicts |
@@ -186,7 +201,9 @@ and runtime.
   and repeat lifecycle tests after every kernel or driver upgrade.
 - Remove the bundled compatibility mdev module if a later PVE kernel enables
   `CONFIG_VFIO_MDEV`, otherwise module names will conflict.
-- Before production use, validate guest workloads, host reboot, abnormal VM
-  exit, resource reclamation, and tenant isolation.
+- Guest boot, virtual PCI BARs, the 25.2.0 `vnpu_guest` driver, and
+  `npu-smi Health: OK` were validated. Before production use, still validate
+  model stress, host reboot, abnormal VM exit, resource reclamation, and tenant
+  isolation.
 - The official VM-mode command is `npu-smi set -t vnpu-mode -d 1`; see the
   [Ascend VM configuration guide](https://www.hiascend.com/doc_center/source/zh/Atlas%20200I%20A2/24.1.RC1/re/virtualmachineconfiguration/%E8%99%9A%E6%8B%9F%E6%9C%BA%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97-24.1.RC1.pdf).

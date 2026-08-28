@@ -17,6 +17,12 @@ kernel configuration and does not ask PVE to carry vendor-specific code.
 
 - [Proxmox Bug 7988](https://bugzilla.proxmox.com/show_bug.cgi?id=7988)
 - [Validated setup and temporary compatibility path](ascend-310p-vnpu-pve.md)
+- [Incremental Linux 7 VFIO region patch](../../patches/ascend310p-linux7-vfio-region-info.patch)
+
+Linux 7 also moved region queries to
+`vfio_device_ops.get_region_info_caps`. The repository now implements this
+callback and has validated an openEuler guest boot and `npu-smi Health: OK` on
+QEMU 11.
 
 Once an upstream PVE ARM64 kernel provides `mdev.ko`, remove the external mdev
 compatibility module to avoid a module-name conflict, then repeat vNPU

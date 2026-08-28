@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
 PATCH_FILE=${PATCH_FILE:-$REPO_ROOT/patches/ascend310p-driver-26.1.1-pve-7.0-vnpu.patch}
-PACKAGE_SUFFIX=${PACKAGE_SUFFIX:-pve7.0.14.3}
+PACKAGE_SUFFIX=${PACKAGE_SUFFIX:-pve7.0.14.4}
 
 usage() {
     cat <<'EOF'

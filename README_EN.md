@@ -30,7 +30,7 @@ drivers, integrating the iBMA userspace, and assigning Atlas 300I Duo
 | BMA driver | 0.4.0, ported from the openEuler kernel source |
 | HiBMC DRM | Optional; `hibmcdrmfb` and BMC screenshots validated |
 | NPU | Two Atlas 300I Duo cards, four logical Ascend 310P3 devices |
-| vNPU | SMMU/IOMMU, mdev lifecycle, and PVE configuration validated |
+| vNPU | SMMU/IOMMU, mdev, QEMU 11 guest boot, and vNPU guest driver validated |
 | Virtualization | ARM KVM, AAVMF, PVE VMs, and LXC validated |
 
 This combination is not an official compatibility commitment from Proxmox or

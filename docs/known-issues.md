@@ -15,6 +15,11 @@ PVE 用户态已经具备通用 mdev 能力：`qemu-server` 可以发现类型�
 
 - [Proxmox Bug 7988](https://bugzilla.proxmox.com/show_bug.cgi?id=7988)
 - [实机验证与临时兼容方案](ascend-310p-vnpu-pve.md)
+- [Linux 7 VFIO region 增量补丁](../patches/ascend310p-linux7-vfio-region-info.patch)
+
+另一个独立兼容点是 Linux 7 将 region 查询迁移到
+`vfio_device_ops.get_region_info_caps`。本仓库已适配该回调，并在 QEMU 11 上
+完成 openEuler Guest 启动和 `npu-smi Health: OK` 验证。
 
 如果上游内核后续提供 `mdev.ko`，应移除仓库方案中的外置 mdev 兼容模块，避免
 同名模块冲突，并重新执行 vNPU 创建、删除和 PVE 生命周期测试。
