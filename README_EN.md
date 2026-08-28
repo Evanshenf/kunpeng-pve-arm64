@@ -4,7 +4,19 @@
 
 This repository documents a field-tested workflow for deploying Proxmox VE
 ARM64 on Kunpeng 920 servers, porting the openEuler BMA and HiBMC kernel
-drivers, integrating the iBMA userspace, and diagnosing ARM64-specific issues.
+drivers, integrating the iBMA userspace, and assigning Atlas 300I Duo
+(Ascend 310P) vNPUs to virtual machines through VFIO mdev.
+
+## Highlights
+
+- **Kunpeng PVE ARM64**: installation and validation of PVE 9.2, ARM KVM,
+  AAVMF, VMs, and LXC.
+- **Atlas 300I Duo vNPU**: Linux 7 mdev support, Ascend 310P driver API
+  migration, persistent VM mode, and end-to-end PVE `hostpci.mdev` validation.
+- **Kunpeng management stack**: build, deployment, and rollback workflows for
+  BMA, HiBMC DRM, and iBMA.
+- **Reproducible delivery**: source patches and local rebuild tooling only;
+  vendor binaries are not redistributed.
 
 ## Validated Baseline
 
@@ -17,6 +29,8 @@ drivers, integrating the iBMA userspace, and diagnosing ARM64-specific issues.
 | iBMA userspace | 2.20.0, closed-source delivery not distributed here |
 | BMA driver | 0.4.0, ported from the openEuler kernel source |
 | HiBMC DRM | Optional; `hibmcdrmfb` and BMC screenshots validated |
+| NPU | Two Atlas 300I Duo cards, four logical Ascend 310P3 devices |
+| vNPU | SMMU/IOMMU, mdev lifecycle, and PVE configuration validated |
 | Virtualization | ARM KVM, AAVMF, PVE VMs, and LXC validated |
 
 This combination is not an official compatibility commitment from Proxmox or
@@ -28,13 +42,14 @@ the kernel, BIOS, BMC, or hardware topology.
 - [PVE ARM64 installation and acceptance](docs/en/pve-arm64-install.md)
 - [BMA and HiBMC driver porting](docs/en/kunpeng-driver-porting.md)
 - [iBMA deployment and rollback](docs/en/ibma-deployment.md)
+- [Atlas 300I Duo vNPU on PVE ARM64](docs/en/ascend-310p-vnpu-pve.md)
 - [Known issues and upstream bugs](docs/en/known-issues.md)
-- `patches/`: source patches for BMA, HiBMC, and qemu-server
-- `scripts/`: driver build, iBMA installation, verification, and rollback tools
+- `patches/`: source patches for BMA, HiBMC, qemu-server, and Ascend 310P
+- `scripts/`: build, deployment, verification, and rollback tools
 
 ## Important Boundaries
 
-1. This repository does not contain closed-source iBMA binaries, vendor
+1. This repository does not contain iBMA/Ascend vendor binaries, vendor
    certificates, firmware, or prebuilt kernel modules.
 2. Rebuild BMA modules against the exact target PVE kernel headers. Never reuse
    modules across kernel versions.
@@ -45,8 +60,15 @@ the kernel, BIOS, BMC, or hardware topology.
 5. When Secure Boot is enabled, sign external modules and enroll the signing
    certificate into the platform trust chain.
 
+## Search Keywords
+
+`Proxmox VE ARM64`, `Kunpeng 920`, `Atlas 300I Duo`, `Ascend 310P`, `vNPU`,
+`VFIO mdev`, `CONFIG_VFIO_MDEV`, `available_instances=0`, and
+`Linux 7 driver porting`.
+
 ## License
 
 Original scripts, documentation, and kernel-source patches in this repository
 are released under GPL-2.0-only. Third-party software, source code, and
-trademarks remain subject to their respective licenses and rights.
+trademarks remain subject to their respective licenses and rights. See
+[Third-party notices](THIRD_PARTY_NOTICES.md).

@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+
+NPUSMI=${NPUSMI:-/usr/local/sbin/npu-smi}
+MIN_DEVICE_COUNT=${MIN_DEVICE_COUNT:-1}
+attempt=0
+
+while [ "$attempt" -lt 90 ]; do
+    device_count=0
+    devices_ready=1
+    for device in /sys/bus/pci/devices/*; do
+        [ -r "$device/vendor" ] || continue
+        [ -r "$device/device" ] || continue
+        [ "$(cat "$device/vendor")" = "0x19e5" ] || continue
+        [ "$(cat "$device/device")" = "0xd500" ] || continue
+        device_count=$((device_count + 1))
+        [ -r "$device/chip_id" ] || devices_ready=0
+    done
+
+    if [ "$device_count" -ge "$MIN_DEVICE_COUNT" ] && [ "$devices_ready" -eq 1 ]; then
+        if "$NPUSMI" set -t vnpu-mode -d 1; then
+            exit 0
+        fi
+    fi
+    attempt=$((attempt + 1))
+    sleep 2
+done
+
+echo "Timed out waiting to set Ascend vNPU VM mode" >&2
+exit 1
