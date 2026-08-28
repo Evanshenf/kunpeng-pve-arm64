@@ -2,7 +2,24 @@
 
 [中文](known-issues.md) | [English](en/known-issues.md)
 
-## 1. qemu-server 在 ARM64 发送 x86 属性
+## 1. ARM64 内核缺少通用 mdev 模块
+
+实测 PVE 9.2 ARM64 的 `7.0.14-6-pve` 内核已启用 VFIO、SMMUv3 和 IOMMU，
+但没有 `CONFIG_VFIO_MDEV`，官方内核包也不提供 `mdev.ko`。同代 amd64 PVE
+内核则配置为 `CONFIG_VFIO_MDEV=m`。
+
+PVE 用户态已经具备通用 mdev 能力：`qemu-server` 可以发现类型、读取
+`available_instances` 并管理创建/删除生命周期。加载与目标内核匹配的 mdev
+兼容模块后，Atlas 300I Duo 的 vNPU 类型可由 PVE API 正常枚举。因此上游需求
+聚焦于 ARM64 内核配置，不要求 PVE 引入厂商专用代码。
+
+- [Proxmox Bug 7988](https://bugzilla.proxmox.com/show_bug.cgi?id=7988)
+- [实机验证与临时兼容方案](ascend-310p-vnpu-pve.md)
+
+如果上游内核后续提供 `mdev.ko`，应移除仓库方案中的外置 mdev 兼容模块，避免
+同名模块冲突，并重新执行 vNPU 创建、删除和 PVE 生命周期测试。
+
+## 2. qemu-server 在 ARM64 发送 x86 属性
 
 现象：
 
@@ -19,7 +36,7 @@ Parameter 'model.props.hv-passthrough' is unexpected
 - [Proxmox Bug 7981](https://bugzilla.proxmox.com/show_bug.cgi?id=7981)
 - [补丁](../patches/qemu-server-arm64-hv-passthrough.patch)
 
-## 2. 鲲鹏 HPRE RSA 验签阻塞
+## 3. 鲲鹏 HPRE RSA 验签阻塞
 
 现象：加载已签名内核模块时，任务可能卡在 `rsassa_pkcs1_verify`；同时系统
 注册了 `hpre-rsa` 和 `rsa-generic`。
@@ -29,7 +46,7 @@ initramfs。是否采用该规避必须以实机调用栈和模块验证结果�
 
 - [Proxmox Bug 7980](https://bugzilla.proxmox.com/show_bug.cgi?id=7980)
 
-## 3. KHO 造成伪 CMA 页块
+## 4. KHO 造成伪 CMA 页块
 
 部分 Proxmox 内核默认启用 Kexec HandOver scratch 区域，可能使
 `CmaFree > CmaTotal` 并造成过早 OOM 判断。
@@ -49,7 +66,7 @@ find /sys/kernel/mm/cma -maxdepth 2 -type f -print -exec cat {} \;
 
 要求 `CmaFree <= CmaTotal`，且 `alloc_pages_fail` 为 0 或经过明确评估。
 
-## 4. ACPI IORT 零位宽 UBSAN
+## 5. ACPI IORT 零位宽 UBSAN
 
 部分鲲鹏固件 IORT Named Component 的 `Memory Size Limit` 为 0，Linux
 全局 DMA 上限扫描可能调用 `DMA_BIT_MASK(0)`，触发 64 位移位 UBSAN。
@@ -57,12 +74,12 @@ find /sys/kernel/mm/cma -maxdepth 2 -type f -print -exec cat {} \;
 如果 PCI、SMMU 和 DMA 功能正常，该问题通常表现为启动期健壮性告警；仍应
 分别向固件和 Linux IORT 维护者反馈，不能通过隐藏日志代替修复。
 
-## 5. 通用包在 ARM64 加载 x86 模块
+## 6. 通用包在 ARM64 加载 x86 模块
 
 通用 `qemu-server` 配置可能尝试加载 x86 专用 `msr` 模块，ARM64 上会产生
 一条找不到模块的日志。它不影响 ARM KVM，但软件包应按架构拆分模块列表。
 
-## 6. 本地热修复维护原则
+## 7. 本地热修复维护原则
 
 - 软件包升级后先检查上游是否已修复，不要机械覆盖新版源码。
 - 使用 `dpkg -V` 记录本地修改。
