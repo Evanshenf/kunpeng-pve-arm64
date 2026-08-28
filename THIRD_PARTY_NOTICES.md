@@ -30,3 +30,12 @@ Reference: <https://docs.kernel.org/driver-api/vfio-mediated-device.html>
 
 Proxmox and Proxmox VE are trademarks of Proxmox Server Solutions GmbH. This
 repository is not an official Proxmox product or support commitment.
+
+## vLLM Ascend
+
+`examples/qwen3-vl-310p/patch_mm_merge_310p.py` follows the 310P multimodal
+workaround proposed in vllm-ascend PR #12914. The file retains its
+Apache-2.0 SPDX notice. The repository does not redistribute the vLLM Ascend
+container image or Qwen model weights.
+
+Reference: <https://github.com/vllm-project/vllm-ascend/pull/12914>

@@ -8600,7 +8600,7 @@ diff -ruN --no-dereference a/kernel/vascend_drv/kvmdt.c b/kernel/vascend_drv/kvm
  STATIC long _hw_vdavinci_device_get_region_info(uintptr_t arg,
                                                  struct hw_vdavinci* vdavinci)
  {
-@@ -1345,6 +1428,13 @@
+@@ -1345,6 +1428,14 @@
      struct kvmdt_guest_info *info = (struct kvmdt_guest_info *)handle;
      struct kvm *kvm = NULL;
      bool kthread = (current->mm == NULL);
@@ -8610,11 +8610,12 @@ diff -ruN --no-dereference a/kernel/vascend_drv/kvmdt.c b/kernel/vascend_drv/kvm
 +    unsigned long hva;
 +    long pinned;
 +    int srcu_idx;
++    int locked;
 +#endif
  
      if (!handle_valid(handle) || info == NULL || info->kvm == NULL) {
          return KVMDT_ERROR_PFN;
-@@ -1361,7 +1451,26 @@
+@@ -1361,7 +1452,31 @@
          vdavinci_use_mm(kvm->mm);
      }
  
@@ -8626,7 +8627,12 @@ diff -ruN --no-dereference a/kernel/vascend_drv/kvmdt.c b/kernel/vascend_drv/kvm
 +        pfn = KVMDT_ERROR_PFN;
 +    } else {
 +        hva = __gfn_to_hva_memslot(slot, gfn);
-+        pinned = pin_user_pages_remote(kvm->mm, hva, 1, FOLL_WRITE, &page, NULL);
++        locked = 1;
++        mmap_read_lock(kvm->mm);
++        pinned = pin_user_pages_remote(kvm->mm, hva, 1, FOLL_WRITE, &page, &locked);
++        if (locked) {
++            mmap_read_unlock(kvm->mm);
++        }
 +        srcu_read_unlock(&kvm->srcu, srcu_idx);
 +        if (pinned == 1) {
 +            pfn = page_to_pfn(page);

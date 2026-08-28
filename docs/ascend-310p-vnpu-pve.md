@@ -62,6 +62,9 @@ PVE 的 mdev 配置形式也可参考其
    路径。
 6. 310P 重启后默认回到容器模式，未切换 VM 模式时虽能看到
    `mdev_supported_types`，但 `available_instances` 为 0。
+7. Linux 7 的 `pin_user_pages_remote()` 要求调用者持有目标 `mm`
+   的 mmap 读锁。缺少该锁时，mdev DMA pool 初始化会在
+   `find_vma`/`__get_user_pages`/`__gup_longterm_locked` 反复触发 WARNING。
 
 ## 5. 补丁内容
 
@@ -75,6 +78,8 @@ PVE 的 mdev 配置形式也可参考其
 - 将 IRQ bypass 注册迁移到 Linux 7 的 eventfd + irq 接口。
 - 使用 KVM memslot 与 `pin_user_pages_remote()` 替代不再导出的
   `gfn_to_pfn()`、`kvm_release_pfn_clean()` 和 `kvm_is_visible_gfn()`。
+- 在 remote GUP 前获取 `mmap_read_lock(kvm->mm)`，传入 `locked`
+  指针并按 GUP 返回状态条件解锁。
 - 为 Linux 7 增加 `.get_region_info_caps`，复用厂商 BAR 和 sparse-map 数据，
   由 VFIO core 生成 capability chain，使 QEMU 11 能读取全部 region。
 - 在目标内核缺少 mdev 时，加入 Linux stable `v7.0.14` 的原生 mdev 核心，
@@ -83,6 +88,9 @@ PVE 的 mdev 配置形式也可参考其
 
 Linux 7 VFIO region 修复也提供独立补丁，便于已部署 `v0.2.0` 基线增量审查：
 [`ascend310p-linux7-vfio-region-info.patch`](../patches/ascend310p-linux7-vfio-region-info.patch)。
+
+GUP 锁修复也提供最小增量补丁：
+[`ascend310p-linux7-gup-lock.patch`](../patches/ascend310p-linux7-gup-lock.patch)。
 
 ## 6. 前置条件
 
@@ -110,7 +118,7 @@ git clone https://github.com/Evanshenf/kunpeng-pve-arm64.git
 cd kunpeng-pve-arm64
 sudo ./scripts/build-ascend310p-pve-package.sh \
     /path/to/ascend310p-driver_26.1.1_arm64.deb
-sudo dpkg -i ./ascend310p-driver_26.1.1+pve7.0.14.4_arm64.deb
+sudo dpkg -i ./ascend310p-driver_26.1.1+pve7.0.14.5_arm64.deb
 ```
 
 脚本会检查包名、版本和架构，补丁应用失败时立即退出，不会修改输入包。
@@ -132,6 +140,8 @@ systemctl enable --now ascend-vnpu-vm-mode.service
 默认至少等待 1 个 `19e5:d500` 设备。多卡环境可在 unit 中设置
 `Environment=MIN_DEVICE_COUNT=<物理功能数量>`，避免部分卡尚未初始化时过早
 切换模式。
+单元同时设置 `Before=pve-guests.service`，保证开机自启 VM 不会早于
+vNPU VM 模式就绪。
 
 ## 9. 验收
 
@@ -183,6 +193,18 @@ PVE 会随 VM 启停创建和删除 mdev。不要同时把同一物理功能作�
 ARM `virt` 机型不要添加 `pcie=1`；该参数在 PVE 中要求 x86 q35，会导致
 `q35 machine model is not enabled`。
 
+### 9.5 Linux 7 GUP 锁验收
+
+启动一次带 mdev 的 Guest，然后检查：
+
+```bash
+journalctl -k -b --no-pager | \
+    grep -E 'find_vma|__get_user_pages|__gup_longterm_locked|kvmdt_gfn_to_mfn'
+```
+
+已验证 `.5` 包在 `dma pool init success` 后上述告警为 0，且 Guest
+可完成 1080p 多模态推理。
+
 ## 10. 常见问题
 
 | 现象 | 优先检查 |
@@ -193,6 +215,7 @@ ARM `virt` 机型不要添加 `pcie=1`；该参数在 PVE 中要求 x86 q35，�
 | 编译出现旧 KVM/IOMMU API 错误 | 驱动是否为 26.1.1，运行内核是否仍为已验证版本，补丁是否完整应用 |
 | QEMU 报 `failed to get region 0 info` | 检查驱动是否实现 Linux 7 `.get_region_info_caps`；应用本仓库 v0.2.1 补丁 |
 | ARM 启动报 q35 未启用 | 删除 `hostpci` 中的 `pcie=1`，ARM `virt` 不使用 x86 q35 |
+| mdev 初始化出现 rwsem/GUP WARNING | 确认驱动包含 `ascend310p-linux7-gup-lock.patch` |
 | 没有 `mdev.ko` | 检查目标内核 `CONFIG_VFIO_MDEV`；本补丁仅为缺少该模块的基线提供兼容实现 |
 | `available_instances=0` | `npu-smi` VM 模式、`chip_id` 就绪状态及 systemd 服务日志 |
 | VM 内看不到设备 | PVE `hostpci.mdev`、Guest vNPU 驱动、IOMMU group 和 PF 复用冲突 |
@@ -204,8 +227,8 @@ ARM `virt` 机型不要添加 `pcie=1`；该参数在 PVE 中要求 x86 q35，�
 - 如果后续 PVE 内核原生启用 `CONFIG_VFIO_MDEV`，应删除兼容 mdev 模块，避免
   与内核原生实现重名。
 - 已验证 openEuler Guest 启动、虚拟 PCI BAR、25.2.0 `vnpu_guest` 驱动和
-  `npu-smi Health: OK`。生产前仍需验证模型压力、宿主重启、VM 异常退出、
-  资源回收和多租户隔离。
+  `npu-smi Health: OK`，并完成 Qwen3-VL-4B 推理与宿主重启回归。
+  生产前仍需验证长时压力、VM 异常退出、资源回收和多租户隔离。
 - 官方 Ascend 文档中的 VM 模式命令为
   `npu-smi set -t vnpu-mode -d 1`，可参考
   [Atlas 虚拟机配置指南](https://www.hiascend.com/doc_center/source/zh/Atlas%20200I%20A2/24.1.RC1/re/virtualmachineconfiguration/%E8%99%9A%E6%8B%9F%E6%9C%BA%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97-24.1.RC1.pdf)。

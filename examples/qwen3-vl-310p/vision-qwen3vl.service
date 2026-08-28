@@ -1,0 +1,19 @@
+[Unit]
+Description=Qwen3-VL vLLM Ascend service
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/opt/vision-qwen3vl/wait-for-npu.sh
+ExecStartPre=-/usr/bin/docker rm -f vision-qwen3vl
+ExecStart=/opt/vision-qwen3vl/run-container.sh
+ExecStop=/usr/bin/docker stop -t 30 vision-qwen3vl
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=0
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

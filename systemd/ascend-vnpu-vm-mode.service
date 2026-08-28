@@ -1,6 +1,7 @@
 [Unit]
 Description=Set Ascend vNPU mode to VM
 After=systemd-modules-load.service local-fs.target
+Before=pve-guests.service
 ConditionPathExists=/usr/local/sbin/npu-smi
 
 [Service]

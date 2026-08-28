@@ -63,6 +63,9 @@ and the PVE [mdev configuration example](https://pve.proxmox.com/wiki/NVIDIA_vGP
    Debian GCC built-in include path.
 6. Ascend 310P boots in container mode. Before VM mode is selected, supported
    types may exist while `available_instances` remains zero.
+7. Linux 7 requires callers of `pin_user_pages_remote()` to hold the target
+   `mm` mmap read lock. Without it, mdev DMA-pool initialization repeatedly
+   warns in `find_vma`, `__get_user_pages`, and `__gup_longterm_locked`.
 
 ## 5. Patch Scope
 
@@ -76,6 +79,8 @@ implements the following changes:
 - Migrates IRQ bypass registration to the Linux 7 eventfd + IRQ interface.
 - Replaces unexported KVM GFN helpers with memslot lookup and
   `pin_user_pages_remote()`.
+- Takes `mmap_read_lock(kvm->mm)`, passes the `locked` state to remote GUP, and
+  conditionally releases the lock according to the GUP contract.
 - Implements Linux 7 `.get_region_info_caps` using the existing vendor BAR and
   sparse-map data so QEMU 11 can query every VFIO region.
 - Builds the unmodified mdev core from Linux stable `v7.0.14` as part of the
@@ -85,6 +90,9 @@ implements the following changes:
 An incremental patch is also provided for reviewing or updating an existing
 v0.2.0 deployment:
 [`ascend310p-linux7-vfio-region-info.patch`](../../patches/ascend310p-linux7-vfio-region-info.patch).
+
+The remote-GUP locking fix is also available as a minimal incremental patch:
+[`ascend310p-linux7-gup-lock.patch`](../../patches/ascend310p-linux7-gup-lock.patch).
 
 ## 6. Prerequisites
 
@@ -113,7 +121,7 @@ git clone https://github.com/Evanshenf/kunpeng-pve-arm64.git
 cd kunpeng-pve-arm64
 sudo ./scripts/build-ascend310p-pve-package.sh \
     /path/to/ascend310p-driver_26.1.1_arm64.deb
-sudo dpkg -i ./ascend310p-driver_26.1.1+pve7.0.14.4_arm64.deb
+sudo dpkg -i ./ascend310p-driver_26.1.1+pve7.0.14.5_arm64.deb
 ```
 
 The script validates package name, version, and architecture. It exits on a
@@ -136,6 +144,8 @@ systemctl enable --now ascend-vnpu-vm-mode.service
 The default minimum is one `19e5:d500` function. On multi-card hosts, set
 `Environment=MIN_DEVICE_COUNT=<physical-function-count>` in the unit so the
 service does not run before all cards are initialized.
+The unit also declares `Before=pve-guests.service`, preventing on-boot guests
+from creating mdevs before VM mode is ready.
 
 ## 9. Validation
 
@@ -181,6 +191,16 @@ the same time. The guest still requires a compatible Ascend vNPU guest driver
 and runtime. Do not add `pcie=1` on an ARM `virt` machine; PVE associates that
 option with the x86 q35 machine type.
 
+After starting a guest with an mdev, verify that the remote-GUP warning is gone:
+
+```bash
+journalctl -k -b --no-pager | \
+    grep -E 'find_vma|__get_user_pages|__gup_longterm_locked|kvmdt_gfn_to_mfn'
+```
+
+The validated `.5` build reported zero matching warnings after
+`dma pool init success` and completed a 1080p multimodal inference request.
+
 ## 10. Troubleshooting
 
 | Symptom | First checks |
@@ -191,6 +211,7 @@ option with the x86 q35 machine type.
 | Old KVM/IOMMU API build errors | Exact driver/kernel versions and complete patch application |
 | QEMU reports `failed to get region 0 info` | Apply the v0.2.1 Linux 7 `.get_region_info_caps` fix |
 | ARM startup reports q35 is not enabled | Remove `pcie=1`; ARM `virt` does not use x86 q35 |
+| rwsem/GUP warning during mdev initialization | Ensure the package includes `ascend310p-linux7-gup-lock.patch` |
 | No `mdev.ko` | Target `CONFIG_VFIO_MDEV`; this patch only supplies mdev for the validated missing-module baseline |
 | `available_instances=0` | `npu-smi` VM mode, `chip_id` readiness, and service logs |
 | Device absent in the guest | PVE `hostpci.mdev`, guest driver, IOMMU group, and PF ownership conflicts |
@@ -202,8 +223,8 @@ option with the x86 q35 machine type.
 - Remove the bundled compatibility mdev module if a later PVE kernel enables
   `CONFIG_VFIO_MDEV`, otherwise module names will conflict.
 - Guest boot, virtual PCI BARs, the 25.2.0 `vnpu_guest` driver, and
-  `npu-smi Health: OK` were validated. Before production use, still validate
-  model stress, host reboot, abnormal VM exit, resource reclamation, and tenant
-  isolation.
+  `npu-smi Health: OK` were validated, together with Qwen3-VL-4B inference and
+  host reboot recovery. Before production use, still validate sustained model
+  load, abnormal VM exit, resource reclamation, and tenant isolation.
 - The official VM-mode command is `npu-smi set -t vnpu-mode -d 1`; see the
   [Ascend VM configuration guide](https://www.hiascend.com/doc_center/source/zh/Atlas%20200I%20A2/24.1.RC1/re/virtualmachineconfiguration/%E8%99%9A%E6%8B%9F%E6%9C%BA%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97-24.1.RC1.pdf).

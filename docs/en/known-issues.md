@@ -28,7 +28,22 @@ Once an upstream PVE ARM64 kernel provides `mdev.ko`, remove the external mdev
 compatibility module to avoid a module-name conflict, then repeat vNPU
 create/remove and PVE lifecycle tests.
 
-## 2. qemu-server Sends an x86 Property on ARM64
+## 2. Ascend Remote GUP Misses the mmap Lock
+
+The initial Linux 7 port called `pin_user_pages_remote()` from
+`kvmdt_gfn_to_mfn()` without holding the `kvm->mm` mmap read lock. Starting a
+guest with an mdev then emitted rwsem warnings in `find_vma`,
+`__get_user_pages`, and `__gup_longterm_locked`.
+
+The fix follows the Linux remote-GUP contract: take `mmap_read_lock()`, pass the
+`locked` state, and conditionally unlock it. It is included in the `.5` build
+and is also available as an
+[incremental GUP-lock patch](../../patches/ascend310p-linux7-gup-lock.patch).
+
+After a host reboot, mdev DMA-pool initialization, and a 1080p inference test,
+the validated host reported zero matching warnings.
+
+## 3. qemu-server Sends an x86 Property on ARM64
 
 Symptom:
 
@@ -45,7 +60,7 @@ Fix: set this property only on `x86_64`.
 - [Proxmox Bug 7981](https://bugzilla.proxmox.com/show_bug.cgi?id=7981)
 - [Patch](../../patches/qemu-server-arm64-hv-passthrough.patch)
 
-## 3. Kunpeng HPRE RSA Verification Stall
+## 4. Kunpeng HPRE RSA Verification Stall
 
 Symptom: loading a signed kernel module can block in `rsassa_pkcs1_verify` when
 both `hpre-rsa` and `rsa-generic` are registered.
@@ -57,7 +72,7 @@ the issue.
 
 - [Proxmox Bug 7980](https://bugzilla.proxmox.com/show_bug.cgi?id=7980)
 
-## 4. Phantom CMA Pageblocks Created by KHO
+## 5. Phantom CMA Pageblocks Created by KHO
 
 Some Proxmox kernels enable a Kexec HandOver scratch area by default. It can
 produce `CmaFree > CmaTotal` and cause premature OOM decisions.
@@ -79,7 +94,7 @@ find /sys/kernel/mm/cma -maxdepth 2 -type f -print -exec cat {} \;
 Require `CmaFree <= CmaTotal`, and either zero `alloc_pages_fail` or a documented
 assessment of every remaining failure.
 
-## 5. ACPI IORT Zero-width UBSAN
+## 6. ACPI IORT Zero-width UBSAN
 
 On some Kunpeng firmware, an IORT Named Component reports a `Memory Size Limit`
 of zero. The Linux global DMA-limit scan can then evaluate `DMA_BIT_MASK(0)` and
@@ -89,13 +104,13 @@ If PCI, SMMU, and DMA remain functional, this is usually a boot-time robustness
 warning. It should still be reported to both the firmware vendor and Linux IORT
 maintainers; suppressing the log is not a substitute for a fix.
 
-## 6. Generic Packages Attempt to Load an x86 Module on ARM64
+## 7. Generic Packages Attempt to Load an x86 Module on ARM64
 
 A generic `qemu-server` module list may attempt to load the x86-only `msr`
 module and emit one not-found message on ARM64. This does not affect ARM KVM,
 but the package should split module lists by architecture.
 
-## 7. Local Hotfix Maintenance Rules
+## 8. Local Hotfix Maintenance Rules
 
 - Check whether an upstream package already contains the fix before modifying
   a newly upgraded file.

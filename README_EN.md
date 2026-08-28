@@ -13,6 +13,8 @@ drivers, integrating the iBMA userspace, and assigning Atlas 300I Duo
   AAVMF, VMs, and LXC.
 - **Atlas 300I Duo vNPU**: Linux 7 mdev support, Ascend 310P driver API
   migration, persistent VM mode, and end-to-end PVE `hostpci.mdev` validation.
+- **Local vision inference**: Qwen3-VL-4B W8A8SC and vLLM Ascend in a `vir04`
+  guest, with an OpenAI-compatible API, reboot recovery, and 1080p validation.
 - **Kunpeng management stack**: build, deployment, and rollback workflows for
   BMA, HiBMC DRM, and iBMA.
 - **Reproducible delivery**: source patches and local rebuild tooling only;
@@ -30,7 +32,7 @@ drivers, integrating the iBMA userspace, and assigning Atlas 300I Duo
 | BMA driver | 0.4.0, ported from the openEuler kernel source |
 | HiBMC DRM | Optional; `hibmcdrmfb` and BMC screenshots validated |
 | NPU | Two Atlas 300I Duo cards, four logical Ascend 310P3 devices |
-| vNPU | SMMU/IOMMU, mdev, QEMU 11 guest boot, and vNPU guest driver validated |
+| vNPU | SMMU/IOMMU, mdev, QEMU 11 guest, vNPU guest driver, and vision inference validated |
 | Virtualization | ARM KVM, AAVMF, PVE VMs, and LXC validated |
 
 This combination is not an official compatibility commitment from Proxmox or
@@ -43,6 +45,7 @@ the kernel, BIOS, BMC, or hardware topology.
 - [BMA and HiBMC driver porting](docs/en/kunpeng-driver-porting.md)
 - [iBMA deployment and rollback](docs/en/ibma-deployment.md)
 - [Atlas 300I Duo vNPU on PVE ARM64](docs/en/ascend-310p-vnpu-pve.md)
+- [Qwen3-VL inference on an Ascend 310P vNPU](docs/en/qwen3-vl-vnpu.md)
 - [Known issues and upstream bugs](docs/en/known-issues.md)
 - `patches/`: source patches for BMA, HiBMC, qemu-server, and Ascend 310P
 - `scripts/`: build, deployment, verification, and rollback tools
@@ -64,7 +67,7 @@ the kernel, BIOS, BMC, or hardware topology.
 
 `Proxmox VE ARM64`, `Kunpeng 920`, `Atlas 300I Duo`, `Ascend 310P`, `vNPU`,
 `VFIO mdev`, `CONFIG_VFIO_MDEV`, `available_instances=0`, and
-`Linux 7 driver porting`.
+`Linux 7 driver porting`, `Qwen3-VL Ascend 310P`, and `vLLM Ascend`.
 
 ## License
 

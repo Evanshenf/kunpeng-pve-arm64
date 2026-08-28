@@ -11,6 +11,8 @@ BMA/HiBMC 内核驱动、部署 iBMA 用户态，以及让 Atlas 300I Duo
 - **鲲鹏 PVE ARM64**：PVE 9.2、ARM KVM、AAVMF、VM/LXC 的安装与验收。
 - **Atlas 300I Duo vNPU**：补齐 PVE Linux 7 的 mdev 能力，完成 Ascend
   310P 驱动接口迁移、VM 模式持久化和 PVE `hostpci.mdev` 闭环验证。
+- **本地视觉推理**：在 `vir04` Guest 中部署 Qwen3-VL-4B W8A8SC、
+  vLLM Ascend 和 OpenAI 兼容 API，完成重启自恢复与 1080p 回归。
 - **鲲鹏管理驱动**：BMA、HiBMC DRM 和 iBMA 的构建、部署与回退。
 - **可复现交付**：只发布源码补丁和重建工具，不分发厂商二进制。
 
@@ -26,7 +28,7 @@ BMA/HiBMC 内核驱动、部署 iBMA 用户态，以及让 Atlas 300I Duo
 | BMA 驱动 | 0.4.0，由 openEuler 内核源码适配构建 |
 | HiBMC DRM | 可选，`hibmcdrmfb` 与 BMC 截图验证通过 |
 | NPU | 2 张 Atlas 300I Duo，4 个 Ascend 310P3 逻辑设备 |
-| vNPU | SMMU/IOMMU、mdev、QEMU 11 Guest 启动和 vNPU Guest 驱动识别通过 |
+| vNPU | SMMU/IOMMU、mdev、QEMU 11 Guest、vNPU Guest 驱动和视觉模型推理通过 |
 | 虚拟化 | ARM KVM、AAVMF、PVE VM 和 LXC 均通过 |
 
 该组合不是 Proxmox 或服务器厂商对所有鲲鹏机型的正式兼容承诺。内核、
@@ -38,6 +40,7 @@ BIOS、BMC 和硬件拓扑变化后必须重新验证。
 - [BMA 与 HiBMC 驱动适配](docs/kunpeng-driver-porting.md)
 - [iBMA 部署与回滚](docs/ibma-deployment.md)
 - [Atlas 300I Duo vNPU：PVE ARM64 适配与部署](docs/ascend-310p-vnpu-pve.md)
+- [Qwen3-VL：Ascend 310P vNPU 推理部署](docs/qwen3-vl-vnpu.md)
 - [已知问题与上游 Bug](docs/known-issues.md)
 - `patches/`：BMA、HiBMC、qemu-server 和 Ascend 310P 的源码补丁
 - `scripts/`：驱动构建、iBMA/Ascend 安装辅助、验证和回滚脚本
@@ -55,7 +58,7 @@ BIOS、BMC 和硬件拓扑变化后必须重新验证。
 
 `Proxmox VE ARM64`、`Kunpeng 920`、`Atlas 300I Duo`、`Ascend 310P`、
 `vNPU`、`VFIO mdev`、`CONFIG_VFIO_MDEV`、`available_instances=0`、
-`Linux 7 driver porting`。
+`Linux 7 driver porting`、`Qwen3-VL Ascend 310P`、`vLLM Ascend`。
 
 ## 许可证
 

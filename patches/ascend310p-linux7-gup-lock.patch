@@ -1,0 +1,24 @@
+--- a/kernel/vascend_drv/kvmdt.c
++++ b/kernel/vascend_drv/kvmdt.c
+@@ -1438,6 +1438,7 @@ STATIC unsigned long kvmdt_gfn_to_mfn(uintptr_t handle, unsigned long gfn)
+     unsigned long hva;
+     long pinned;
+     int srcu_idx;
++    int locked;
+ #endif
+ 
+     if (!handle_valid(handle) || info == NULL || info->kvm == NULL) {
+@@ -1460,7 +1461,12 @@ STATIC unsigned long kvmdt_gfn_to_mfn(uintptr_t handle, unsigned long gfn)
+         pfn = KVMDT_ERROR_PFN;
+     } else {
+         hva = __gfn_to_hva_memslot(slot, gfn);
+-        pinned = pin_user_pages_remote(kvm->mm, hva, 1, FOLL_WRITE, &page, NULL);
++        locked = 1;
++        mmap_read_lock(kvm->mm);
++        pinned = pin_user_pages_remote(kvm->mm, hva, 1, FOLL_WRITE, &page, &locked);
++        if (locked) {
++            mmap_read_unlock(kvm->mm);
++        }
+         srcu_read_unlock(&kvm->srcu, srcu_idx);
+         if (pinned == 1) {
+             pfn = page_to_pfn(page);
