@@ -110,6 +110,17 @@ LOAD_FORMAT=sharded_state
 
 See the [full VFIO passthrough guide](ascend-310p-vfio-pve.md) for host setup.
 
+A dual-`vir04` guest can use one standard pool from each physical card:
+
+```text
+hostpci0: 0000:03:00.0,mdev=vnpu-vir04
+hostpci1: 0000:04:00.0,mdev=vnpu-vir04
+```
+
+Set `ASCEND_RT_VISIBLE_DEVICES=0,1`, `DATA_PARALLEL_SIZE=2`, and
+`TENSOR_PARALLEL_SIZE=1`. The current TP1 W8A8SC checkpoint cannot be changed
+directly to TP2.
+
 ## 5. API Use
 
 ```bash
@@ -149,6 +160,74 @@ With two full cards and four physical 310P3 chips, measured DP4 throughput was
 3.89-3.98x the single-request baseline. See the
 [full-passthrough performance results](ascend-310p-vfio-pve.md#5-qwen3-vl-dp4-result)
 for the exact workload and limits.
+
+Measured dual-`vir04` DP2 results:
+
+| Workload | Result |
+| --- | ---: |
+| Single request, 384 completion tokens, 3-run mean | 17.744 s |
+| Two identical concurrent requests, wall time | 19.969 s |
+| Aggregate throughput gain | 1.777x |
+| One complete request, 590 completion tokens | 26.314 s |
+| Two overlapping crops with complete output | 18.041 s |
+| Complete-result latency reduction | 31.44% |
+
+[`dual-region-analyze.py`](../../examples/qwen3-vl-310p/dual-region-analyze.py)
+crops the source into overlapping upper/lower 60% regions, runs both requests
+concurrently, and merges JSON without a third model call. Coverage was
+complete, but the 4B model still produced a few conflicting OCR characters in
+person names; retain per-region output or add a dedicated OCR verifier when
+exact text is required.
+
+The same 957x877, 29-line Chinese screenshot was also tested with RapidOCR
+3.9.2 and the PP-OCRv6 small models on the guest CPU:
+
+| Path | Measured result |
+| --- | ---: |
+| OCR, default batch size 6, warm mean | 1.850 s |
+| OCR, batch size 16, warm mean | 1.623 s |
+| OCR, batch size 32, warm mean | 1.998 s |
+| OCR plus 4B text-only agenda formatting | 19.808 s, still truncated at 384 tokens |
+| OCR plus deterministic formatting (final client) | 2.494 s including process startup, all 5 items |
+
+For text-heavy screens, use
+[`ocr-first-analyze.py`](../../examples/qwen3-vl-310p/ocr-first-analyze.py)
+to return text, confidence, and exact boxes. Apply deterministic rules to known
+forms and agendas, and reserve Qwen for icons, relationships, and semantic
+anomalies. Sending all OCR text back through the 4B model unconditionally
+erases the latency advantage during generation.
+
+### 6.1 Why card TOPS do not predict single-stream tokens/s
+
+Huawei specifies 280 INT8 TOPS and 408 GB/s for an entire Atlas 300I Duo: two
+310-series processors and 16 AI Cores in total. A `vir04` contains four AI
+Cores and a proportional resource slice. The current two `vir04` devices host
+two independent TP1 replicas; DP2 load-balances concurrent requests instead of
+combining both slices for one token.
+
+Current cumulative vLLM Prometheus measurements are:
+
+| Metric | Engine 0 | Engine 1 |
+| --- | ---: | ---: |
+| Mean inter-token latency | 42.96 ms | 41.98 ms |
+| Corresponding decode rate | 23.28 tokens/s | 23.82 tokens/s |
+| Mean TTFT | 1.36 s | 1.30 s |
+
+A controlled text-only request produced 295 tokens in 12.128 seconds, or about
+24.3 end-to-end tokens/s. During the request the selected `vir04` sustained
+91-93% AI Core utilization while the other DP replica stayed idle. The slice
+is therefore busy: autoregressive decode is a low-batch, weight-streaming
+workload constrained by per-slice memory bandwidth, launch overhead, and the
+serial dependency between tokens, rather than the card's large-matrix INT8
+peak.
+
+For the same 871-prompt/384-completion workload, a full physical chip reduced
+latency from about 17.89 seconds on `vir04` to about 13.51 seconds. More
+physical resources help, but not linearly. The practical order for further
+single-request optimization is OCR/rule bypass, streaming, a compatible
+speculative decoder, a rebuilt TP2 quantized checkpoint, and only then a
+lower-bit checkpoint validated on 310P. Adding DP replicas alone cannot reduce
+single-stream latency.
 
 ## 7. Operations and Security
 

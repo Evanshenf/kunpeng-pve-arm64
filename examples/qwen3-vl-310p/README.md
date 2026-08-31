@@ -33,3 +33,51 @@ For a four-chip physical guest, set `ASCEND_RT_VISIBLE_DEVICES=0,1,2,3`,
 The launcher mounts only the requested `/dev/davinci*` nodes. A TP1
 `sharded_state` checkpoint must remain at `TENSOR_PARALLEL_SIZE=1` unless a
 separately generated TP checkpoint is available.
+
+For two `vir04` devices, use `ASCEND_RT_VISIBLE_DEVICES=0,1` and
+`DATA_PARALLEL_SIZE=2`. `dual-region-analyze.py` sends upper/lower overlapping
+image crops concurrently and merges their JSON without a third model call.
+Install Pillow on the client first (`python3-pillow` or `pip install Pillow`):
+
+```bash
+VISION_API_KEY='<secret>' ./dual-region-analyze.py /path/to/image.png \
+    --url http://<guest-ip>:8000/v1/chat/completions
+```
+
+For text-heavy screenshots, use OCR as the primary path. The tested headless
+installation avoids adding GUI libraries to the inference guest:
+
+```bash
+python3 -m venv /opt/rapidocr/venv
+/opt/rapidocr/venv/bin/pip install rapidocr==3.9.2 onnxruntime==1.29.0
+/opt/rapidocr/venv/bin/pip uninstall -y opencv-python
+/opt/rapidocr/venv/bin/pip install opencv-python-headless==5.0.0.93
+```
+
+Return OCR text and bounding boxes without using the VLM:
+
+```bash
+/opt/rapidocr/venv/bin/python ocr-first-analyze.py /path/to/image.png \
+    --mode ocr
+```
+
+Fixed-layout pages should be structured with deterministic rules instead of
+spending VLM output tokens. The included rules profile handles agenda pages:
+
+```bash
+/opt/rapidocr/venv/bin/python ocr-first-analyze.py /path/to/image.png \
+    --mode rules --profile agenda
+```
+
+The client defaults to a recognition/classification batch size of 16. On the
+tested 29-line screenshot this was faster than 6 or 32 without changing the
+recognized line set. Override it with `--ocr-batch-size` for other CPUs or much
+larger pages.
+
+Or send the OCR text, rather than the image, to Qwen for compact structuring:
+
+```bash
+VISION_API_KEY='<secret>' /opt/rapidocr/venv/bin/python \
+    ocr-first-analyze.py /path/to/image.png --mode hybrid --profile agenda \
+    --url http://<guest-ip>:8000/v1/chat/completions
+```

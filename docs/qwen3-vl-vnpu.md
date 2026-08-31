@@ -119,6 +119,16 @@ LOAD_FORMAT=sharded_state
 整卡宿主配置见
 [Atlas 300I Duo 整卡直通文档](ascend-310p-vfio-pve.md)。
 
+双 `vir04` 配置使用两张卡的普通资源池：
+
+```text
+hostpci0: 0000:03:00.0,mdev=vnpu-vir04
+hostpci1: 0000:04:00.0,mdev=vnpu-vir04
+```
+
+Guest 设置 `ASCEND_RT_VISIBLE_DEVICES=0,1`、`DATA_PARALLEL_SIZE=2`、
+`TENSOR_PARALLEL_SIZE=1`。当前 TP1 W8A8SC 权重不能直接改为 TP2。
+
 ## 5. API 使用
 
 健康检查：
@@ -159,6 +169,66 @@ Graph 不修改模型权重或图片，当前样例未发现识别准确率回�
 两张整卡、四颗 310P3 的实测 DP4 吞吐为单请求基线的 3.89～3.98 倍；该模式仍不
 缩短单请求。完整测试条件和数据见
 [整卡直通性能结果](ascend-310p-vfio-pve.md#8-性能结果)。
+
+双 `vir04` DP2 实测：
+
+| 用例 | 结果 |
+| --- | ---: |
+| 单请求，384 completion tokens，3 次平均 | 17.744 s |
+| 两个相同请求并发总耗时 | 19.969 s |
+| 聚合吞吐提升 | 1.777 倍 |
+| 单请求完整输出，590 completion tokens | 26.314 s |
+| 上下重叠裁剪双请求完整输出 | 18.041 s |
+| 完整结果延迟降低 | 31.44% |
+
+[`dual-region-analyze.py`](../examples/qwen3-vl-310p/dual-region-analyze.py)
+在客户端将原图裁为上下各 60%、中间重叠 20%，并发请求两个 vir04 后直接
+合并 JSON，不增加第三次模型调用。该方案覆盖范围完整，但 4B 对少数人名仍
+可能产生 OCR 冲突；精确文字场景应保留两个区域原始结果或增加专用 OCR 校验。
+
+同一张 957×877、29 行中文测试图增加 RapidOCR 3.9.2 / PP-OCRv6 small
+CPU 基线后，结果如下：
+
+| 路径 | 实测结果 |
+| --- | ---: |
+| OCR 默认 6 行批量，热运行平均 | 1.850 s |
+| OCR 16 行批量，热运行平均 | 1.623 s |
+| OCR 32 行批量，热运行平均 | 1.998 s |
+| OCR + 4B 纯文本议程整理 | 19.808 s，384 tokens 仍截断 |
+| OCR + 本地规则整理（最终客户端） | 2.494 s（含进程启动），完整 5 个议题 |
+
+因此文字密集页面应由
+[`ocr-first-analyze.py`](../examples/qwen3-vl-310p/ocr-first-analyze.py)
+先返回文本、置信度和精确框坐标。固定议程/表单使用确定性规则，只有图标、
+关系和异常语义才回退到 Qwen。不要把全部 OCR 文本无条件再交给 4B 重写，
+否则生成阶段会抵消 OCR 的速度收益。
+
+### 6.1 为什么单会话不是按纸面 TOPS 换算
+
+华为公开规格中，单张 Atlas 300I Duo 的 280 TOPS INT8 和 408 GB/s 是两颗
+310 系列处理器、共 16 个 AI Core 的整卡指标；vNPU 的 AI Core、内存等资源
+按模板切分。当前每个 `vir04` 只有 4 个 AI Core，两张 `vir04` 运行的是两个
+TP1 模型副本。DP2 负责并发负载均衡，并不把两个切片合并计算一个 token。
+
+当前 vLLM Prometheus 累计指标：
+
+| 指标 | Engine 0 | Engine 1 |
+| --- | ---: | ---: |
+| 平均 inter-token latency | 42.96 ms | 41.98 ms |
+| 对应稳定生成速度 | 23.28 tokens/s | 23.82 tokens/s |
+| 平均 TTFT | 1.36 s | 1.30 s |
+
+受控纯文本请求生成 295 tokens，总耗时 12.128 s，端到端约 24.3 tokens/s。
+请求期间实际命中的 `vir04` AI Core 利用率为 91%～93%，另一个 DP 副本为
+0%，说明单切片已接近忙满。自回归 decode 是低 batch 的矩阵向量和权重搬运
+场景，主要受单切片内存带宽、算子调度和每 token 串行依赖限制，不能用整卡
+大矩阵 INT8 TOPS 直接推算。
+
+同一 871 prompt / 384 completion tokens 用例中，整卡单芯片从 `vir04` 的
+约 17.89 s 改善到约 13.51 s，证明增加物理资源有收益，但不是线性翻倍。
+进一步降低单请求延迟的候选顺序是：专用 OCR/规则绕过长生成、流式返回、
+匹配模型的 speculative decoding、重新生成 TP2 量化权重，以及经 310P
+实测确认的更低比特权重；不能只增加 DP 副本。
 
 ## 7. 维护与安全
 
