@@ -1,0 +1,27 @@
+[Unit]
+Description=OCR and Qwen vision routing API
+After=network-online.target vision-qwen3vl.service
+Wants=network-online.target vision-qwen3vl.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/vision-qwen3vl/runtime.env
+Environment=ROUTER_HOST=0.0.0.0
+Environment=ROUTER_PORT=8001
+Environment=HOME=/tmp
+Environment=QWEN_UPSTREAM_URL=http://127.0.0.1:8000/v1/chat/completions
+Environment=QWEN_UPSTREAM_HEALTH_URL=http://127.0.0.1:8000/health
+Environment=QWEN_UPSTREAM_MODEL=qwen3-vl-4b
+Environment=OCR_BATCH_SIZE=16
+ExecStart=/opt/rapidocr-bench/venv/bin/python /opt/vision-router/vision-router.py
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

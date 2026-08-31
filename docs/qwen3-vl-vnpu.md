@@ -230,6 +230,24 @@ TP1 模型副本。DP2 负责并发负载均衡，并不把两个切片合并计
 匹配模型的 speculative decoding、重新生成 TP2 量化权重，以及经 310P
 实测确认的更低比特权重；不能只增加 DP 副本。
 
+### 6.2 OCR 与 Qwen 统一入口
+
+[`vision-router.py`](../examples/qwen3-vl-310p/vision-router.py) 作为独立
+sidecar 监听 `8001`，不修改原 vLLM `8000` 服务。接口保持 OpenAI
+`/v1/chat/completions` 格式，并复用 `VLLM_API_KEY`：
+
+| model | 行为 |
+| --- | --- |
+| `vision-ocr` | 只执行 OCR，返回文字、置信度、框坐标及可识别的固定结构 |
+| `vision-hybrid` | 先 OCR，再把原图和 OCR 原文一起交给 Qwen |
+| `vision-auto` | 明确的文字/坐标/议程请求走 OCR，其余走混合分析 |
+| `qwen3-vl-4b` | 原样代理到现有 Qwen 服务 |
+
+同一测试图通过常驻网关实测：自动 OCR 总耗时 1.503 s；混合分析总耗时
+5.414 s，其中 OCR 1.378 s、Qwen 输出 50 tokens；Qwen 纯文本直通
+0.551 s，SSE 流式响应正常。OCR 与混合模式默认只接受 base64 data URI，
+避免网关成为不受限制的远程 URL 获取器。
+
 ## 7. 维护与安全
 
 ```bash

@@ -229,6 +229,26 @@ speculative decoder, a rebuilt TP2 quantized checkpoint, and only then a
 lower-bit checkpoint validated on 310P. Adding DP replicas alone cannot reduce
 single-stream latency.
 
+### 6.2 Unified OCR and Qwen endpoint
+
+[`vision-router.py`](../../examples/qwen3-vl-310p/vision-router.py) runs as a
+sidecar on port `8001` without changing the original vLLM service on `8000`.
+It keeps the OpenAI `/v1/chat/completions` contract and reuses
+`VLLM_API_KEY`:
+
+| model | Behavior |
+| --- | --- |
+| `vision-ocr` | OCR text, confidence, boxes, and recognized fixed structures |
+| `vision-hybrid` | OCR first, then send the source image and OCR text to Qwen |
+| `vision-auto` | Route explicit text/coordinate/agenda requests to OCR, otherwise hybrid |
+| `qwen3-vl-4b` | Direct proxy to the existing Qwen service |
+
+With the same test image, the resident gateway completed automatic OCR in
+1.503 seconds. Hybrid analysis took 5.414 seconds, including 1.378 seconds for
+OCR and a 50-token Qwen response. A direct text-only Qwen request took 0.551
+seconds, and SSE streaming passed. OCR and hybrid modes accept base64 data URIs
+by default so the gateway does not become an unrestricted remote URL fetcher.
+
 ## 7. Operations and Security
 
 ```bash

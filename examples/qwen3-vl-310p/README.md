@@ -81,3 +81,60 @@ VISION_API_KEY='<secret>' /opt/rapidocr/venv/bin/python \
     ocr-first-analyze.py /path/to/image.png --mode hybrid --profile agenda \
     --url http://<guest-ip>:8000/v1/chat/completions
 ```
+
+## Unified routing API
+
+`vision-router.py` exposes one OpenAI-compatible endpoint on port `8001` while
+leaving the original vLLM endpoint on `8000` unchanged. It reuses
+`VLLM_API_KEY` from `/etc/vision-qwen3vl/runtime.env` and preloads the OCR
+engine once.
+
+Available model names:
+
+- `vision-ocr`: OCR text, confidence, boxes, and deterministic agenda parsing.
+- `vision-hybrid`: OCR first, then Qwen receives both the original image and
+  exact OCR text.
+- `vision-auto`: OCR-only for explicit text/coordinate/agenda requests;
+  otherwise hybrid analysis.
+- `qwen3-vl-4b`: direct proxy to the existing vLLM service.
+
+Install after the RapidOCR environment has been prepared:
+
+```bash
+install -d -m 0755 /opt/vision-router
+install -m 0755 vision-router.py /opt/vision-router/
+install -m 0644 vision-router.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now vision-router.service
+```
+
+The request format remains OpenAI compatible. Send images as base64 data URIs
+for OCR and hybrid modes:
+
+```bash
+curl http://<guest-ip>:8001/v1/chat/completions \
+    -H "Authorization: Bearer ${VISION_API_KEY}" \
+    -H 'Content-Type: application/json' \
+    -d @request.json
+```
+
+Example `request.json`:
+
+```json
+{
+  "model": "vision-auto",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}},
+        {"type": "text", "text": "提取全部文字和坐标"}
+      ]
+    }
+  ]
+}
+```
+
+Remote HTTP image downloads are disabled by default to avoid turning the
+router into an unrestricted URL fetcher. Set `ALLOW_REMOTE_IMAGE_URLS=1` only
+inside a controlled network when that behavior is required.
