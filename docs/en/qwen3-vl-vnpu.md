@@ -97,6 +97,19 @@ systemctl enable --now vision-qwen3vl.service
 starts. Initial model compilation and graph capture can take several minutes;
 use an HTTP 200 response from `/health` as the readiness condition.
 
+The same scripts support data parallelism with physical devices. A full-card
+guest can set the following values in `runtime.env`:
+
+```text
+ASCEND_RT_VISIBLE_DEVICES=0,1,2,3
+TENSOR_PARALLEL_SIZE=1
+DATA_PARALLEL_SIZE=4
+API_SERVER_COUNT=1
+LOAD_FORMAT=sharded_state
+```
+
+See the [full VFIO passthrough guide](ascend-310p-vfio-pve.md) for host setup.
+
 ## 5. API Use
 
 ```bash
@@ -131,6 +144,11 @@ A second `vir04` running a second replica can nearly double concurrency but
 does not reduce single-request latency. TP2 requires matching weights and
 inter-device communication validation; a 4B model generally scales by less
 than 2x for a single request.
+
+With two full cards and four physical 310P3 chips, measured DP4 throughput was
+3.89-3.98x the single-request baseline. See the
+[full-passthrough performance results](ascend-310p-vfio-pve.md#5-qwen3-vl-dp4-result)
+for the exact workload and limits.
 
 ## 7. Operations and Security
 

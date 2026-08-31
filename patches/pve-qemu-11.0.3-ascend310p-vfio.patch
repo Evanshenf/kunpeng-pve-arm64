@@ -1,0 +1,167 @@
+diff --git a/hw/vfio/pci-quirks.c b/hw/vfio/pci-quirks.c
+index 66e02b15a481aa810cca6fac465e64639673e970..20e8d233b2b1f0effd20ea4bc41c004eb09a9fe3 100644
+--- a/hw/vfio/pci-quirks.c
++++ b/hw/vfio/pci-quirks.c
+@@ -48,6 +48,112 @@ static const struct {
+     { 0x14e4, 0x168e }, /* Broadcom BCM 57810 */
+ };
+ 
++#define PCI_VENDOR_ID_HUAWEI                   0x19e5
++#define PCI_DEVICE_ID_ASCEND310P                0xd500
++#define PCI_SUB_DEVICE_ID_ASCEND310P_1P_MIN     0x0100
++#define PCI_SUB_DEVICE_ID_ASCEND310P_1P_MAX     0x010f
++#define PCI_SUB_DEVICE_ID_ASCEND310P_2P_MIN     0x0110
++#define PCI_SUB_DEVICE_ID_ASCEND310P_2P_MAX     0x011f
++#define ASCEND310P_2P_BAR2_STRIDE               (128 * MiB)
++#define ASCEND310P_XLOADER_OFFSET               0x100430
++#define ASCEND310P_XLOADER_SIZE                 4
++
++typedef struct VFIOAscend310PQuirk {
++    VFIOPCIDevice *vdev;
++    hwaddr offset;
++    uint8_t bar;
++} VFIOAscend310PQuirk;
++
++bool vfio_pci_quirk_skip_reset(VFIOPCIDevice *vdev)
++{
++    /*
++     * A conventional bus reset makes the 310P endpoint disappear and
++     * re-enumerate.  VFIO/QEMU cannot retain an open device across that
++     * transition, so reset handling must remain with the vendor driver.
++     */
++    return vfio_pci_is(vdev, PCI_VENDOR_ID_HUAWEI,
++                       PCI_DEVICE_ID_ASCEND310P);
++}
++
++static uint64_t vfio_ascend310p_xloader_read(void *opaque, hwaddr addr,
++                                              unsigned size)
++{
++    VFIOAscend310PQuirk *data = opaque;
++
++    return vfio_region_read(&data->vdev->bars[data->bar].region,
++                            data->offset + addr, size);
++}
++
++static void vfio_ascend310p_xloader_write(void *opaque, hwaddr addr,
++                                           uint64_t value, unsigned size)
++{
++    VFIOAscend310PQuirk *data = opaque;
++
++    qemu_log_mask(LOG_GUEST_ERROR,
++                  "%s: blocked write to Ascend 310P xloader register "
++                  "at BAR%u+0x%" HWADDR_PRIx " value=0x%" PRIx64
++                  " size=%u\n",
++                  data->vdev->vbasedev.name, data->bar,
++                  data->offset + addr, value, size);
++}
++
++static const MemoryRegionOps vfio_ascend310p_xloader_ops = {
++    .read = vfio_ascend310p_xloader_read,
++    .write = vfio_ascend310p_xloader_write,
++    .endianness = DEVICE_LITTLE_ENDIAN,
++    .valid = {
++        .min_access_size = 4,
++        .max_access_size = 4,
++    },
++};
++
++static void vfio_probe_ascend310p_bar2_quirk(VFIOPCIDevice *vdev, int nr)
++{
++    VFIOAscend310PQuirk *data;
++    VFIOQuirk *quirk;
++    unsigned int chip_count;
++    unsigned int i;
++
++    if (!vfio_pci_is(vdev, PCI_VENDOR_ID_HUAWEI,
++                     PCI_DEVICE_ID_ASCEND310P) || nr != 2) {
++        return;
++    }
++
++    if (vdev->sub_device_id >= PCI_SUB_DEVICE_ID_ASCEND310P_1P_MIN &&
++        vdev->sub_device_id <= PCI_SUB_DEVICE_ID_ASCEND310P_1P_MAX) {
++        chip_count = 1;
++    } else if (vdev->sub_device_id >=
++               PCI_SUB_DEVICE_ID_ASCEND310P_2P_MIN &&
++               vdev->sub_device_id <=
++               PCI_SUB_DEVICE_ID_ASCEND310P_2P_MAX) {
++        chip_count = 2;
++    } else {
++        return;
++    }
++
++    quirk = vfio_quirk_alloc(chip_count);
++    quirk->data = data = g_new0(VFIOAscend310PQuirk, chip_count);
++
++    for (i = 0; i < chip_count; i++) {
++        data[i].vdev = vdev;
++        data[i].offset = ASCEND310P_XLOADER_OFFSET +
++                         i * ASCEND310P_2P_BAR2_STRIDE;
++        data[i].bar = nr;
++
++        memory_region_init_io(&quirk->mem[i], OBJECT(vdev),
++                              &vfio_ascend310p_xloader_ops, &data[i],
++                              i == 0 ?
++                              "vfio-ascend310p-chip0-xloader-quirk" :
++                              "vfio-ascend310p-chip1-xloader-quirk",
++                              ASCEND310P_XLOADER_SIZE);
++        memory_region_add_subregion_overlap(vdev->bars[nr].region.mem,
++                                            data[i].offset,
++                                            &quirk->mem[i], 1);
++    }
++
++    QLIST_INSERT_HEAD(&vdev->bars[nr].quirks, quirk, next);
++}
++
+ bool vfio_opt_rom_in_denylist(VFIOPCIDevice *vdev)
+ {
+     int i;
+@@ -1178,6 +1284,7 @@ void vfio_bar_quirk_setup(VFIOPCIDevice *vdev, int nr)
+     vfio_probe_ati_bar2_quirk(vdev, nr);
+     vfio_probe_nvidia_bar5_quirk(vdev, nr);
+     vfio_probe_nvidia_bar0_quirk(vdev, nr);
++    vfio_probe_ascend310p_bar2_quirk(vdev, nr);
+     vfio_probe_rtl8168_bar2_quirk(vdev, nr);
+ #ifdef CONFIG_VFIO_IGD
+     vfio_probe_igd_bar0_quirk(vdev, nr);
+diff --git a/hw/vfio/pci.c b/hw/vfio/pci.c
+index 1945751ffd44dd129768ac7788f0375b216f1747..649cb5ca94ef19c9b0d8d9a0d8f5cb2867d6f5c9 100644
+--- a/hw/vfio/pci.c
++++ b/hw/vfio/pci.c
+@@ -2822,6 +2822,12 @@ static int vfio_pci_hot_reset_multi(VFIODevice *vbasedev)
+ static void vfio_pci_compute_needs_reset(VFIODevice *vbasedev)
+ {
+     VFIOPCIDevice *vdev = container_of(vbasedev, VFIOPCIDevice, vbasedev);
++
++    if (vfio_pci_quirk_skip_reset(vdev)) {
++        vbasedev->needs_reset = false;
++        return;
++    }
++
+     if (!vbasedev->reset_works || (!vdev->has_flr && vdev->has_pm_reset)) {
+         vbasedev->needs_reset = true;
+     }
+@@ -3658,6 +3664,12 @@ static void vfio_pci_reset(DeviceState *dev)
+         return;
+     }
+ 
++    if (vfio_pci_quirk_skip_reset(vdev)) {
++        warn_report_once("%s: skipping unsafe Ascend 310P bus reset",
++                         vdev->vbasedev.name);
++        return;
++    }
++
+     trace_vfio_pci_reset(vdev->vbasedev.name);
+ 
+     vfio_pci_pre_reset(vdev);
+diff --git a/hw/vfio/pci.h b/hw/vfio/pci.h
+index d6495d7f297513605db363dcdb3dd9b8dfb29a8d..51e9238185ff597ca4a0827794683c5d3c02b06a 100644
+--- a/hw/vfio/pci.h
++++ b/hw/vfio/pci.h
+@@ -242,6 +242,7 @@ void vfio_vga_write(void *opaque, hwaddr addr, uint64_t data, unsigned size);
+ VFIOPCIDevice *vfio_pci_from_vfio_device(VFIODevice *vbasedev);
+ void vfio_sub_page_bar_update_mappings(VFIOPCIDevice *vdev);
+ bool vfio_opt_rom_in_denylist(VFIOPCIDevice *vdev);
++bool vfio_pci_quirk_skip_reset(VFIOPCIDevice *vdev);
+ bool vfio_config_quirk_setup(VFIOPCIDevice *vdev, Error **errp);
+ void vfio_vga_quirk_setup(VFIOPCIDevice *vdev);
+ void vfio_vga_quirk_exit(VFIOPCIDevice *vdev);

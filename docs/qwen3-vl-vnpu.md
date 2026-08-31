@@ -106,6 +106,19 @@ systemctl enable --now vision-qwen3vl.service
 `wait-for-npu.sh` 会先检查必要设备节点和 `npu-smi`。模型首次编译和
 Graph 构建可需要数分钟，应以 `/health` 返回 HTTP 200 为最终就绪条件。
 
+同一套脚本也支持整卡多芯片数据并行。物理卡 Guest 可在 `runtime.env` 中设置：
+
+```text
+ASCEND_RT_VISIBLE_DEVICES=0,1,2,3
+TENSOR_PARALLEL_SIZE=1
+DATA_PARALLEL_SIZE=4
+API_SERVER_COUNT=1
+LOAD_FORMAT=sharded_state
+```
+
+整卡宿主配置见
+[Atlas 300I Duo 整卡直通文档](ascend-310p-vfio-pve.md)。
+
 ## 5. API 使用
 
 健康检查：
@@ -142,6 +155,10 @@ Graph 不修改模型权重或图片，当前样例未发现识别准确率回�
 `vir04` 已是当前单个 vNPU 最大通用模板。增加第二个 `vir04` 做双实例
 可使并发吞吐接近翻倍，但不会缩短单请求；TP2 需要匹配权重和通信验证，
 对 4B 模型的单请求收益通常低于 2 倍。
+
+两张整卡、四颗 310P3 的实测 DP4 吞吐为单请求基线的 3.89～3.98 倍；该模式仍不
+缩短单请求。完整测试条件和数据见
+[整卡直通性能结果](ascend-310p-vfio-pve.md#8-性能结果)。
 
 ## 7. 维护与安全
 

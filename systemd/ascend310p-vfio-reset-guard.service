@@ -1,0 +1,14 @@
+[Unit]
+Description=Disable unsafe PCI reset methods for Ascend 310P VFIO passthrough
+After=systemd-modules-load.service systemd-udev-settle.service
+Before=pve-guests.service
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/sbin/modprobe ascend310p_no_bus_reset
+ExecStart=/usr/local/sbin/ascend310p-vfio-reset-guard
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

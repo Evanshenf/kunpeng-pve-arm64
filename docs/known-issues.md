@@ -97,7 +97,22 @@ find /sys/kernel/mm/cma -maxdepth 2 -type f -print -exec cat {} \;
 通用 `qemu-server` 配置可能尝试加载 x86 专用 `msr` 模块，ARM64 上会产生
 一条找不到模块的日志。它不影响 ARM KVM，但软件包应按架构拆分模块列表。
 
-## 8. 本地热修复维护原则
+## 8. Ascend 310P 整卡 reset 后重新枚举
+
+对 `19e5:d500` 执行通用 PCI bus reset 会触发链路 Down/Up 和设备重新枚举，
+使 QEMU 已打开的 VFIO fd 失效。PVE 启动前 reset 与 QEMU reset 都需要规避。
+
+已验证修复包括：initramfs 提前绑定 `vfio-pci`、PVE `driver=keep`、设置
+`PCI_DEV_FLAGS_NO_BUS_RESET` 的 DKMS guard、function reset guard，以及 QEMU
+BAR2/reset quirk。
+
+为避免 Guest 继承上一轮设备状态，PVE `pre-start` hook 会在 QEMU 打开设备前
+执行受控 reset，并等待完整重新枚举；关机和 VFIO fd 释放阶段仍禁止 reset。
+
+- [完整分析与部署](ascend-310p-vfio-pve.md)
+- [QEMU 补丁](../patches/pve-qemu-11.0.3-ascend310p-vfio.patch)
+
+## 9. 本地热修复维护原则
 
 - 软件包升级后先检查上游是否已修复，不要机械覆盖新版源码。
 - 使用 `dpkg -V` 记录本地修改。

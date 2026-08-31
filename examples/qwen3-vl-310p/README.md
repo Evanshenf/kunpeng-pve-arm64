@@ -3,7 +3,8 @@
 [中文文档](../../docs/qwen3-vl-vnpu.md) | [English guide](../../docs/en/qwen3-vl-vnpu.md)
 
 This directory contains the public, credential-free files used to run a TP1
-Qwen3-VL W8A8SC checkpoint on an Ascend 310P `vir04` guest with vLLM Ascend.
+Qwen3-VL W8A8SC checkpoint on an Ascend 310P `vir04` guest or on multiple
+physical 310P chips with vLLM data parallelism.
 
 It does not contain model weights, vendor drivers, container layers, or API
 keys. Obtain those artifacts from their authorized sources.
@@ -26,3 +27,9 @@ install -m 0644 vision-qwen3vl.service /etc/systemd/system/
 Replace the example API key, place the tested TP1 model under the path expected
 by `run-container.sh`, then enable the service. Do not expose the plain HTTP
 endpoint directly to an untrusted network.
+
+For a four-chip physical guest, set `ASCEND_RT_VISIBLE_DEVICES=0,1,2,3`,
+`DATA_PARALLEL_SIZE=4`, `TENSOR_PARALLEL_SIZE=1`, and `API_SERVER_COUNT=1`.
+The launcher mounts only the requested `/dev/davinci*` nodes. A TP1
+`sharded_state` checkpoint must remain at `TENSOR_PARALLEL_SIZE=1` unless a
+separately generated TP checkpoint is available.

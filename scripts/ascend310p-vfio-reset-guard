@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+matched=0
+
+for device in /sys/bus/pci/devices/*; do
+    [ -r "$device/vendor" ] || continue
+    [ -r "$device/device" ] || continue
+    [ "$(cat "$device/vendor")" = "0x19e5" ] || continue
+    [ "$(cat "$device/device")" = "0xd500" ] || continue
+    [ -w "$device/reset_method" ] || continue
+
+    # A bus reset removes and re-enumerates the 310P endpoint under VFIO.
+    printf '\n' > "$device/reset_method"
+    printf 'Disabled PCI reset methods for %s\n' "$(basename "$device")"
+    matched=$((matched + 1))
+done
+
+if [ "$matched" -eq 0 ]; then
+    echo "No Ascend 310P PCI functions with a writable reset_method were found"
+fi

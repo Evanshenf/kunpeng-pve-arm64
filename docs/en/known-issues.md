@@ -110,7 +110,24 @@ A generic `qemu-server` module list may attempt to load the x86-only `msr`
 module and emit one not-found message on ARM64. This does not affect ARM KVM,
 but the package should split module lists by architecture.
 
-## 8. Local Hotfix Maintenance Rules
+## 8. Ascend 310P Re-enumerates After a Full-device Reset
+
+A generic PCI bus reset of `19e5:d500` causes a link Down/Up cycle and endpoint
+re-enumeration, invalidating QEMU's open VFIO descriptor. Both the PVE
+pre-start reset and the QEMU reset path must be avoided.
+
+The validated fix combines early `vfio-pci` binding, PVE `driver=keep`, a DKMS
+guard that sets `PCI_DEV_FLAGS_NO_BUS_RESET`, a function-reset guard, and a
+QEMU BAR2/reset quirk.
+
+To avoid carrying device state across guest boots, a PVE `pre-start` hook
+performs a controlled reset and waits for full re-enumeration before QEMU opens
+the device. Reset remains prohibited during shutdown and VFIO fd release.
+
+- [Full analysis and deployment](ascend-310p-vfio-pve.md)
+- [QEMU patch](../../patches/pve-qemu-11.0.3-ascend310p-vfio.patch)
+
+## 9. Local Hotfix Maintenance Rules
 
 - Check whether an upstream package already contains the fix before modifying
   a newly upgraded file.

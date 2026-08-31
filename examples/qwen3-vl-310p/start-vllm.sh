@@ -7,6 +7,10 @@ PORT="${PORT:-8000}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-8192}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-4}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.85}"
+TENSOR_PARALLEL_SIZE="${TENSOR_PARALLEL_SIZE:-1}"
+DATA_PARALLEL_SIZE="${DATA_PARALLEL_SIZE:-1}"
+API_SERVER_COUNT="${API_SERVER_COUNT:-1}"
+LOAD_FORMAT="${LOAD_FORMAT:-sharded_state}"
 
 export ASCEND_RT_VISIBLE_DEVICES="${ASCEND_RT_VISIBLE_DEVICES:-0}"
 export PYTORCH_NPU_ALLOC_CONF="${PYTORCH_NPU_ALLOC_CONF:-expandable_segments:True}"
@@ -22,8 +26,10 @@ args=(
     --served-model-name "$SERVED_MODEL_NAME"
     --dtype float16
     --quantization ascend
-    --load-format sharded_state
-    --tensor-parallel-size 1
+    --load-format "$LOAD_FORMAT"
+    --tensor-parallel-size "$TENSOR_PARALLEL_SIZE"
+    --data-parallel-size "$DATA_PARALLEL_SIZE"
+    --api-server-count "$API_SERVER_COUNT"
     --max-model-len "$MAX_MODEL_LEN"
     --max-num-seqs "$MAX_NUM_SEQS"
     --max-num-batched-tokens 4096

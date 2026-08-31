@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+guard_module="ascend310p_no_bus_reset"
+reset_guard="/usr/local/sbin/ascend310p-vfio-reset-guard"
+timeout_seconds="${ASCEND_RESET_TIMEOUT_SECONDS:-30}"
+
+read_sysfs() {
+    local path="$1"
+
+    [[ -r "$path" ]] || return 0
+    cat -- "$path" 2>/dev/null || true
+}
+
+if [[ $EUID -ne 0 ]]; then
+    echo "This command must run as root" >&2
+    exit 1
+fi
+
+if [[ $# -eq 0 ]]; then
+    echo "Usage: ascend310p-vfio-prepare <PCI-BDF> [PCI-BDF ...]" >&2
+    exit 1
+fi
+
+bdfs=("$@")
+for bdf in "${bdfs[@]}"; do
+    if [[ ! "$bdf" =~ ^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$ ]]; then
+        printf 'Invalid PCI BDF: %s\n' "$bdf" >&2
+        exit 1
+    fi
+done
+
+modprobe "$guard_module"
+
+if ! command -v fuser >/dev/null 2>&1; then
+    echo "fuser is required to verify that no Ascend VFIO group is in use" >&2
+    exit 1
+fi
+
+for pci_device in /sys/bus/pci/devices/*; do
+    [[ "$(read_sysfs "$pci_device/vendor")" == "0x19e5" ]] || continue
+    [[ "$(read_sysfs "$pci_device/device")" == "0xd500" ]] || continue
+    [[ -L "$pci_device/iommu_group" ]] || continue
+    group_path="$(readlink -f "$pci_device/iommu_group" 2>/dev/null || true)"
+    group="$(basename "$group_path")"
+    if [[ -c "/dev/vfio/$group" ]] && fuser -s "/dev/vfio/$group"; then
+        printf 'Ascend VFIO group %s is still in use; refusing reset\n' "$group" >&2
+        exit 1
+    fi
+done
+
+restore_guard() {
+    modprobe "$guard_module" || true
+    "$reset_guard" || true
+}
+trap restore_guard EXIT
+
+modprobe -r "$guard_module"
+
+for bdf in "${bdfs[@]}"; do
+    device="/sys/bus/pci/devices/$bdf"
+    if [[ ! -r "$device/vendor" || ! -r "$device/device" ]]; then
+        printf 'PCI device is missing before reset: %s\n' "$bdf" >&2
+        exit 1
+    fi
+    if [[ "$(read_sysfs "$device/vendor")" != "0x19e5" ||
+          "$(read_sysfs "$device/device")" != "0xd500" ]]; then
+        printf 'PCI device is not an Ascend 310P: %s\n' "$bdf" >&2
+        exit 1
+    fi
+
+    old_inode="$(stat -c '%i' "$device")"
+    printf 'bus\n' > "$device/reset_method"
+    printf '1\n' > "$device/reset"
+
+    deadline=$((SECONDS + timeout_seconds))
+    transitioned=false
+    while (( SECONDS < deadline )); do
+        if [[ ! -d "$device" ]]; then
+            transitioned=true
+            break
+        fi
+        current_inode="$(stat -c '%i' "$device" 2>/dev/null || true)"
+        if [[ "$current_inode" != "$old_inode" ||
+              ! -r "$device/vendor" || ! -r "$device/device" ||
+              "$(read_sysfs "$device/vendor")" != "0x19e5" ||
+              "$(read_sysfs "$device/device")" != "0xd500" ]]; then
+            transitioned=true
+            break
+        fi
+        sleep 0.05
+    done
+
+    if [[ "$transitioned" != true ]]; then
+        printf 'Ascend 310P %s did not leave its pre-reset state\n' "$bdf" >&2
+        exit 1
+    fi
+
+    ready=false
+    stable_checks=0
+    while (( SECONDS < deadline )); do
+        if [[ "$(read_sysfs "$device/vendor")" == "0x19e5" &&
+              "$(read_sysfs "$device/device")" == "0xd500" ]]; then
+            if [[ ! -L "$device/driver" ]]; then
+                printf '%s\n' "$bdf" > /sys/bus/pci/drivers_probe
+            fi
+
+            driver_path="$(readlink -f "$device/driver" 2>/dev/null || true)"
+            if [[ "$(basename "$driver_path")" == "vfio-pci" &&
+                  -L "$device/iommu_group" ]]; then
+                group_path="$(readlink -f "$device/iommu_group" 2>/dev/null || true)"
+                group="$(basename "$group_path")"
+                if [[ -c "/dev/vfio/$group" ]]; then
+                    stable_checks=$((stable_checks + 1))
+                    if (( stable_checks >= 5 )); then
+                        printf 'Ascend 310P %s is ready in IOMMU group %s\n' \
+                            "$bdf" "$group"
+                        ready=true
+                        break
+                    fi
+                else
+                    stable_checks=0
+                fi
+            else
+                stable_checks=0
+            fi
+        else
+            stable_checks=0
+        fi
+        sleep 0.2
+    done
+
+    if [[ "$ready" != true ]]; then
+        printf 'Timed out waiting for Ascend 310P %s to re-enumerate\n' "$bdf" >&2
+        exit 1
+    fi
+done
+
+modprobe "$guard_module"
+"$reset_guard"
+trap - EXIT
+
+for bdf in "${bdfs[@]}"; do
+    device="/sys/bus/pci/devices/$bdf"
+    driver_path="$(readlink -f "$device/driver" 2>/dev/null || true)"
+    if [[ "$(basename "$driver_path")" != "vfio-pci" ]]; then
+        printf 'Ascend 310P %s is not bound to vfio-pci\n' "$bdf" >&2
+        exit 1
+    fi
+    if [[ -n "$(read_sysfs "$device/reset_method")" ]]; then
+        printf 'Reset methods remain enabled for %s\n' "$bdf" >&2
+        exit 1
+    fi
+done

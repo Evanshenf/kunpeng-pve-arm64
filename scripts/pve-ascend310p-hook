@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+vmid="${1:?missing VMID}"
+phase="${2:?missing hook phase}"
+
+if [[ "$phase" != "pre-start" ]]; then
+    exit 0
+fi
+
+mapfile -t bdfs < <(
+    qm config "$vmid" |
+        awk -F': ' '/^hostpci[0-9]+:/ { print $2 }' |
+        cut -d, -f1 |
+        tr ';' '\n' |
+        grep -E '^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$'
+)
+
+ascend_bdfs=()
+for bdf in "${bdfs[@]}"; do
+    device="/sys/bus/pci/devices/$bdf"
+    [[ -r "$device/vendor" && -r "$device/device" ]] || continue
+    [[ "$(<"$device/vendor")" == "0x19e5" ]] || continue
+    [[ "$(<"$device/device")" == "0xd500" ]] || continue
+    ascend_bdfs+=("$bdf")
+done
+
+if [[ ${#ascend_bdfs[@]} -eq 0 ]]; then
+    exit 0
+fi
+
+exec /usr/local/sbin/ascend310p-vfio-prepare "${ascend_bdfs[@]}"

@@ -31,6 +31,11 @@ Reference: <https://docs.kernel.org/driver-api/vfio-mediated-device.html>
 Proxmox and Proxmox VE are trademarks of Proxmox Server Solutions GmbH. This
 repository is not an official Proxmox product or support commitment.
 
+`patches/pve-qemu-11.0.3-ascend310p-vfio.patch` modifies the VFIO PCI code in
+QEMU as packaged by Proxmox VE. It contains only source-level changes and does
+not redistribute a QEMU or PVE binary. QEMU and the PVE packaging remain
+subject to their respective upstream licenses and notices.
+
 ## vLLM Ascend
 
 `examples/qwen3-vl-310p/patch_mm_merge_310p.py` follows the 310P multimodal
