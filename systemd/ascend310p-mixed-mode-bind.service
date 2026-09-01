@@ -1,0 +1,16 @@
+[Unit]
+Description=Bind selected Ascend 310P cards to VFIO and retain vNPU parents
+After=systemd-modules-load.service systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+Conflicts=ascend-vnpu-vm-mode.service
+Before=ascend310p-vfio-reset-guard.service pve-guests.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/ascend310p-vfio
+ExecStart=/usr/local/sbin/ascend310p-mixed-mode-bind
+RemainAfterExit=yes
+TimeoutStartSec=240
+
+[Install]
+WantedBy=multi-user.target

@@ -127,7 +127,22 @@ the device. Reset remains prohibited during shutdown and VFIO fd release.
 - [Full analysis and deployment](ascend-310p-vfio-pve.md)
 - [QEMU patch](../../patches/pve-qemu-11.0.3-ascend310p-vfio.patch)
 
-## 9. Local Hotfix Maintenance Rules
+## 9. UDA Waits for Hidden Devices in Mixed Full-VFIO/vNPU Mode
+
+After one Duo card is bound to VFIO in initramfs, only two chips on the other
+card remain host-visible. The vendor UDA logic uses the four-node NUMA count as
+the expected physical-device count, so `npu-smi` blocks and eventually reports
+`dev_num=2; uda_detected_dev_num=4`.
+
+Mixed mode also requires BDF-specific early binding and disabling PCI automatic
+probing during the controlled pre-start reset. The validated solution uses a
+default-off UDA count override, a BDF-scoped reset guard, and a dedicated
+mixed-mode service.
+
+- [Mixed-mode deployment](ascend-310p-mixed-mode-pve.md)
+- [Incremental UDA-count patch](../../patches/ascend310p-mixed-mode-uda-count.patch)
+
+## 10. Local Hotfix Maintenance Rules
 
 - Check whether an upstream package already contains the fix before modifying
   a newly upgraded file.

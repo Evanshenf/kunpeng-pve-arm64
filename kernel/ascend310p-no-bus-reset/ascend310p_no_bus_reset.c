@@ -3,14 +3,46 @@
 #include <linux/device/bus.h>
 #include <linux/module.h>
 #include <linux/pci.h>
+#include <linux/string.h>
 
 #define PCI_VENDOR_ID_HUAWEI_LOCAL 0x19e5
 #define PCI_DEVICE_ID_ASCEND310P 0xd500
+#define ASCEND310P_BDF_LIST_SIZE 256
+
+static char target_bdfs[ASCEND310P_BDF_LIST_SIZE];
+module_param_string(target_bdfs, target_bdfs, sizeof(target_bdfs), 0444);
+MODULE_PARM_DESC(
+	target_bdfs,
+	"Comma-separated PCI BDF allowlist; empty protects every Ascend 310P"
+);
+
+static bool ascend310p_is_target(struct pci_dev *pdev)
+{
+	char list[ASCEND310P_BDF_LIST_SIZE];
+	char *cursor;
+	char *token;
+
+	if (pdev->vendor != PCI_VENDOR_ID_HUAWEI_LOCAL ||
+	    pdev->device != PCI_DEVICE_ID_ASCEND310P)
+		return false;
+
+	if (!target_bdfs[0])
+		return true;
+
+	strscpy(list, target_bdfs, sizeof(list));
+	cursor = list;
+	while ((token = strsep(&cursor, ",")) != NULL) {
+		token = strim(token);
+		if (token[0] && !strcmp(token, pci_name(pdev)))
+			return true;
+	}
+
+	return false;
+}
 
 static void ascend310p_disable_bus_reset(struct pci_dev *pdev)
 {
-	if (pdev->vendor != PCI_VENDOR_ID_HUAWEI_LOCAL ||
-	    pdev->device != PCI_DEVICE_ID_ASCEND310P)
+	if (!ascend310p_is_target(pdev))
 		return;
 
 	if (pdev->dev_flags & PCI_DEV_FLAGS_NO_BUS_RESET)
@@ -22,8 +54,7 @@ static void ascend310p_disable_bus_reset(struct pci_dev *pdev)
 
 static void ascend310p_enable_bus_reset(struct pci_dev *pdev)
 {
-	if (pdev->vendor != PCI_VENDOR_ID_HUAWEI_LOCAL ||
-	    pdev->device != PCI_DEVICE_ID_ASCEND310P)
+	if (!ascend310p_is_target(pdev))
 		return;
 
 	if (!(pdev->dev_flags & PCI_DEV_FLAGS_NO_BUS_RESET))

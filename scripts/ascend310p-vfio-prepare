@@ -4,6 +4,8 @@ set -euo pipefail
 guard_module="ascend310p_no_bus_reset"
 reset_guard="/usr/local/sbin/ascend310p-vfio-reset-guard"
 timeout_seconds="${ASCEND_RESET_TIMEOUT_SECONDS:-30}"
+autoprobe_path="/sys/bus/pci/drivers_autoprobe"
+original_autoprobe=""
 
 read_sysfs() {
     local path="$1"
@@ -50,12 +52,22 @@ for pci_device in /sys/bus/pci/devices/*; do
 done
 
 restore_guard() {
+    if [[ -n "$original_autoprobe" && -w "$autoprobe_path" ]]; then
+        printf '%s\n' "$original_autoprobe" > "$autoprobe_path" || true
+    fi
     modprobe "$guard_module" || true
-    "$reset_guard" || true
+    "$reset_guard" "${bdfs[@]}" || true
 }
 trap restore_guard EXIT
 
 modprobe -r "$guard_module"
+
+# The vendor driver must not claim the endpoint while a bus reset re-enumerates it.
+# Manual drivers_probe still honors driver_override while automatic probing is off.
+if [[ -r "$autoprobe_path" && -w "$autoprobe_path" ]]; then
+    original_autoprobe="$(<"$autoprobe_path")"
+    printf '0\n' > "$autoprobe_path"
+fi
 
 for bdf in "${bdfs[@]}"; do
     device="/sys/bus/pci/devices/$bdf"
@@ -101,8 +113,13 @@ for bdf in "${bdfs[@]}"; do
     while (( SECONDS < deadline )); do
         if [[ "$(read_sysfs "$device/vendor")" == "0x19e5" &&
               "$(read_sysfs "$device/device")" == "0xd500" ]]; then
-            if [[ ! -L "$device/driver" ]]; then
-                printf '%s\n' "$bdf" > /sys/bus/pci/drivers_probe
+            driver_path="$(readlink -f "$device/driver" 2>/dev/null || true)"
+            if [[ "$(basename "$driver_path")" != "vfio-pci" ]]; then
+                printf 'vfio-pci\n' > "$device/driver_override"
+                if [[ -n "$driver_path" && -w "$driver_path/unbind" ]]; then
+                    printf '%s\n' "$bdf" > "$driver_path/unbind" || true
+                fi
+                printf '%s\n' "$bdf" > /sys/bus/pci/drivers_probe || true
             fi
 
             driver_path="$(readlink -f "$device/driver" 2>/dev/null || true)"
@@ -136,8 +153,13 @@ for bdf in "${bdfs[@]}"; do
     fi
 done
 
+if [[ -n "$original_autoprobe" && -w "$autoprobe_path" ]]; then
+    printf '%s\n' "$original_autoprobe" > "$autoprobe_path"
+    original_autoprobe=""
+fi
+
 modprobe "$guard_module"
-"$reset_guard"
+"$reset_guard" "${bdfs[@]}"
 trap - EXIT
 
 for bdf in "${bdfs[@]}"; do
@@ -147,6 +169,7 @@ for bdf in "${bdfs[@]}"; do
         printf 'Ascend 310P %s is not bound to vfio-pci\n' "$bdf" >&2
         exit 1
     fi
+    printf 'vfio-pci\n' > "$device/driver_override"
     if [[ -n "$(read_sysfs "$device/reset_method")" ]]; then
         printf 'Reset methods remain enabled for %s\n' "$bdf" >&2
         exit 1

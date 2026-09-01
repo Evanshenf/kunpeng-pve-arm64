@@ -3,7 +3,31 @@ set -eu
 
 matched=0
 
-for device in /sys/bus/pci/devices/*; do
+if [ "$#" -eq 0 ] && [ -n "${ASCEND_VFIO_BDFS:-}" ]; then
+    old_ifs=$IFS
+    IFS=,
+    # BDFs contain no shell metacharacters; split the validated environment list.
+    set -- $ASCEND_VFIO_BDFS
+    IFS=$old_ifs
+fi
+
+if [ "$#" -gt 0 ]; then
+    devices=""
+    for bdf in "$@"; do
+        case "$bdf" in
+            [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]:[0-9a-fA-F][0-9a-fA-F]:[0-9a-fA-F][0-9a-fA-F].[0-7]) ;;
+            *)
+                printf 'Invalid PCI BDF: %s\n' "$bdf" >&2
+                exit 1
+                ;;
+        esac
+        devices="$devices /sys/bus/pci/devices/$bdf"
+    done
+else
+    devices="/sys/bus/pci/devices/*"
+fi
+
+for device in $devices; do
     [ -r "$device/vendor" ] || continue
     [ -r "$device/device" ] || continue
     [ "$(cat "$device/vendor")" = "0x19e5" ] || continue
@@ -17,5 +41,5 @@ for device in /sys/bus/pci/devices/*; do
 done
 
 if [ "$matched" -eq 0 ]; then
-    echo "No Ascend 310P PCI functions with a writable reset_method were found"
+    echo "No requested Ascend 310P PCI functions with a writable reset_method were found"
 fi

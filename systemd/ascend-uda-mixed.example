@@ -1,0 +1,2 @@
+# Two physical 310P chips remain host-visible on one Atlas 300I Duo card.
+options ascend_uda uda_expected_phy_dev_num=2

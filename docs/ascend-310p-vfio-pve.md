@@ -24,6 +24,10 @@
 
 这是特定软硬件组合的工程验证结果，不是华为或 Proxmox 的通用兼容承诺。
 
+一张卡整卡直通、另一张卡保留 vNPU 的部署与额外 UDA/initramfs 约束见
+[Atlas 300I Duo 混合模式](ascend-310p-mixed-mode-pve.md)。同一 PF 内仍不能
+同时使用整卡 VFIO 与 mdev。
+
 ## 2. 实测基线
 
 | 项目 | 实测配置 |

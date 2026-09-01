@@ -112,7 +112,20 @@ BAR2/reset quirk。
 - [完整分析与部署](ascend-310p-vfio-pve.md)
 - [QEMU 补丁](../patches/pve-qemu-11.0.3-ascend310p-vfio.patch)
 
-## 9. 本地热修复维护原则
+## 9. Ascend 整卡与 vNPU 混用时 UDA 等待不存在的设备
+
+一张 Duo 卡在 initramfs 中绑定 VFIO 后，宿主仅管理另一张卡的两颗芯片。
+Ascend UDA 原逻辑使用 NUMA 节点数 4 作为期望芯片数，导致所有 `npu-smi`
+请求阻塞并最终报告 `dev_num=2; uda_detected_dev_num=4`。
+
+混合模式还要求物理卡在厂商驱动加载前完成 BDF 早绑定，并在 pre-start reset
+期间关闭 PCI 自动探测，避免厂商驱动重新抢占。当前验证方案使用默认关闭的
+UDA 计数参数、BDF 范围 reset guard 和专用 mixed-mode 服务。
+
+- [混合模式完整部署](ascend-310p-mixed-mode-pve.md)
+- [UDA 计数增量补丁](../patches/ascend310p-mixed-mode-uda-count.patch)
+
+## 10. 本地热修复维护原则
 
 - 软件包升级后先检查上游是否已修复，不要机械覆盖新版源码。
 - 使用 `dpkg -V` 记录本地修改。

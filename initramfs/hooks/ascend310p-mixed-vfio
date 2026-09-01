@@ -1,0 +1,26 @@
+#!/bin/sh
+set -e
+
+PREREQ=""
+
+prereqs() {
+    echo "$PREREQ"
+}
+
+case "${1:-}" in
+    prereqs)
+        prereqs
+        exit 0
+        ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+[ -r /etc/default/ascend310p-vfio ] || exit 0
+
+mkdir -p "$DESTDIR/etc/default"
+cp -p /etc/default/ascend310p-vfio "$DESTDIR/etc/default/ascend310p-vfio"
+
+manual_add_modules vfio
+manual_add_modules vfio_iommu_type1
+manual_add_modules vfio_pci

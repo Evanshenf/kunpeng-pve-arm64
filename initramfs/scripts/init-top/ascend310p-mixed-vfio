@@ -1,0 +1,65 @@
+#!/bin/sh
+set -e
+
+PREREQ=""
+
+prereqs() {
+    echo "$PREREQ"
+}
+
+case "${1:-}" in
+    prereqs)
+        prereqs
+        exit 0
+        ;;
+esac
+
+[ -r /etc/default/ascend310p-vfio ] || exit 0
+. /etc/default/ascend310p-vfio
+
+[ -n "${ASCEND_VFIO_BDFS:-}" ] || exit 0
+
+modprobe vfio
+modprobe vfio_iommu_type1
+modprobe vfio_pci
+
+old_ifs=$IFS
+IFS=,
+set -- $ASCEND_VFIO_BDFS
+IFS=$old_ifs
+
+for bdf in "$@"; do
+    device="/sys/bus/pci/devices/$bdf"
+    attempts=0
+    while [ ! -r "$device/vendor" ] && [ "$attempts" -lt 100 ]; do
+        attempts=$((attempts + 1))
+        sleep 0.1
+    done
+
+    [ "$(cat "$device/vendor")" = "0x19e5" ]
+    [ "$(cat "$device/device")" = "0xd500" ]
+
+    printf 'vfio-pci\n' > "$device/driver_override"
+    if [ -L "$device/driver" ]; then
+        driver_path="$(readlink -f "$device/driver")"
+        if [ "$(basename "$driver_path")" != "vfio-pci" ]; then
+            printf '%s\n' "$bdf" > "$driver_path/unbind"
+        fi
+    fi
+    if [ ! -L "$device/driver" ]; then
+        printf '%s\n' "$bdf" > /sys/bus/pci/drivers_probe
+    fi
+
+    attempts=0
+    while [ "$attempts" -lt 100 ]; do
+        driver_path="$(readlink -f "$device/driver" 2>/dev/null || true)"
+        if [ "$(basename "$driver_path")" = "vfio-pci" ]; then
+            echo "initramfs: bound Ascend 310P $bdf to vfio-pci"
+            break
+        fi
+        attempts=$((attempts + 1))
+        sleep 0.1
+    done
+
+    [ "$(basename "$(readlink -f "$device/driver")")" = "vfio-pci" ]
+done

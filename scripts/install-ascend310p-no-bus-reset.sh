@@ -2,7 +2,7 @@
 set -euo pipefail
 
 package_name="ascend310p-no-bus-reset"
-package_version="1.0.0"
+package_version="1.1.0"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source_dir="$(cd -- "$script_dir/../kernel/ascend310p-no-bus-reset" && pwd)"
 dkms_dir="/usr/src/${package_name}-${package_version}"
@@ -53,6 +53,16 @@ install -m 0644 "$source_dir/ascend310p_no_bus_reset.c" \
 dkms add -m "$package_name" -v "$package_version"
 dkms build -m "$package_name" -v "$package_version"
 dkms install -m "$package_name" -v "$package_version"
+
+if [[ -n "${ASCEND_VFIO_BDFS:-}" ]]; then
+    if [[ ! "$ASCEND_VFIO_BDFS" =~ ^[0-9a-fA-F:.]+(,[0-9a-fA-F:.]+)*$ ]]; then
+        printf 'Invalid ASCEND_VFIO_BDFS: %s\n' "$ASCEND_VFIO_BDFS" >&2
+        exit 1
+    fi
+    printf 'options ascend310p_no_bus_reset target_bdfs=%s\n' \
+        "$ASCEND_VFIO_BDFS" \
+        > /etc/modprobe.d/ascend310p-no-bus-reset.conf
+fi
 
 printf '%s\n' ascend310p_no_bus_reset \
     > /etc/modules-load.d/ascend310p-no-bus-reset.conf

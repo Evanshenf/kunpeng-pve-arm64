@@ -13,6 +13,10 @@ The validated stack is PVE 9.2.9, Linux `7.0.14-6-pve`, patched
 normal physical-device driver. This is an engineering result for one stack,
 not a general compatibility commitment from Huawei or Proxmox.
 
+For one full-passthrough card plus one host-managed vNPU card, see the
+[mixed-mode guide](ascend-310p-mixed-mode-pve.md). Full VFIO and mdev remain
+mutually exclusive on the same PCI function.
+
 ## 2. Why generic passthrough fails
 
 The 310P virtual-machine flow needs two device-specific protections:

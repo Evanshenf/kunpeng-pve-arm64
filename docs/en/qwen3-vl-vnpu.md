@@ -121,6 +121,13 @@ Set `ASCEND_RT_VISIBLE_DEVICES=0,1`, `DATA_PARALLEL_SIZE=2`, and
 `TENSOR_PARALLEL_SIZE=1`. The current TP1 W8A8SC checkpoint cannot be changed
 directly to TP2.
 
+The current F30 system uses a mixed layout: one full Duo card supplies two
+physical 310P3 chips to VM100 with the same `VISIBLE_DEVICES=0,1 / DP=2`
+configuration, while the second Duo remains host-managed with `vir01=7`,
+`vir02=3`, and `vir04=1`. See the
+[mixed-mode guide](ascend-310p-mixed-mode-pve.md) for the initramfs, UDA, and
+reset constraints.
+
 ## 5. API Use
 
 ```bash

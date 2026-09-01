@@ -6,6 +6,7 @@ Wants=systemd-udev-settle.service
 
 [Service]
 Type=oneshot
+EnvironmentFile=-/etc/default/ascend310p-vfio
 ExecStartPre=/sbin/modprobe ascend310p_no_bus_reset
 ExecStart=/usr/local/sbin/ascend310p-vfio-reset-guard
 RemainAfterExit=yes

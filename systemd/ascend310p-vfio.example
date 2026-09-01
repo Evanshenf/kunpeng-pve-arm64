@@ -1,0 +1,8 @@
+# Physical passthrough cards protected by the VFIO reset guards.
+ASCEND_VFIO_BDFS=0000:03:00.0
+
+# Cards retained on the host for mediated vNPU creation.
+ASCEND_VNPU_BDFS=0000:04:00.0
+
+# After the physical card is hidden behind VFIO, switch only host-visible cards.
+ASCEND_SET_VNPU_VM_MODE=1

@@ -1,0 +1,27 @@
+diff --git a/dbl/uda/uda_access.c b/dbl/uda/uda_access.c
+--- a/dbl/uda/uda_access.c
++++ b/dbl/uda/uda_access.c
+@@ -48,6 +48,10 @@ struct uda_dev_shared_check {
+ };
+ 
+ static u32 uda_detected_dev_num = 0;
++static u32 uda_expected_phy_dev_num = 0;
++ka_module_param(uda_expected_phy_dev_num, uint, KA_S_IRUSR);
++KA_MODULE_PARM_DESC(uda_expected_phy_dev_num,
++    "Override the host-visible physical-device count; zero keeps NUMA discovery");
+ static dev_t uda_dev;
+ static ka_class_t *uda_class;
+ 
+@@ -1268,6 +1272,12 @@ KA_EXPORT_SYMBOL(uda_get_cur_ns_udevids);
+ 
+ int uda_set_detected_phy_dev_num(u32 dev_num)
+ {
++    if ((uda_expected_phy_dev_num > 0) &&
++        (uda_expected_phy_dev_num < UDA_UDEV_MAX_NUM)) {
++        dev_num = uda_expected_phy_dev_num;
++        uda_info("Override detected physical-device count. (dev_num=%u)\n", dev_num);
++    }
++
+     if ((dev_num == 0) || (dev_num >= UDA_UDEV_MAX_NUM)) {
+         uda_err("Invalid dev num. (dev_num=%u)\n", dev_num);
+         return -EINVAL;

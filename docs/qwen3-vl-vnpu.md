@@ -129,6 +129,11 @@ hostpci1: 0000:04:00.0,mdev=vnpu-vir04
 Guest 设置 `ASCEND_RT_VISIBLE_DEVICES=0,1`、`DATA_PARALLEL_SIZE=2`、
 `TENSOR_PARALLEL_SIZE=1`。当前 TP1 W8A8SC 权重不能直接改为 TP2。
 
+当前 F30 实机进一步切换为混合模式：一张 Duo 整卡向 VM100 提供两颗物理
+310P3，仍使用 `VISIBLE_DEVICES=0,1 / DP=2`；另一张 Duo 留在宿主，继续提供
+`vir01=7 / vir02=3 / vir04=1`。该模式的 initramfs、UDA 和 reset 约束见
+[混合部署文档](ascend-310p-mixed-mode-pve.md)。
+
 ## 5. API 使用
 
 健康检查：

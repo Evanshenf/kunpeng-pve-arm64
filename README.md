@@ -14,6 +14,8 @@ BMA/HiBMC 内核驱动、部署 iBMA 用户态，以及让 Atlas 300I Duo
 - **Atlas 300I Duo 整卡直通**：补充 QEMU BAR2 xloader 保护和 reset quirk，
   使用 PVE `driver=keep` 和 DKMS bus-reset guard，实现两张卡、四颗 310P3
   的稳定直通与启停回归。
+- **Atlas 300I Duo 混合模式**：一张 Duo 卡整卡直通 Qwen VM，另一张卡保留
+  PVE mdev/vNPU，完成 initramfs 早绑定、UDA 计数适配和两轮 reset 回归。
 - **本地视觉推理**：在 `vir04` Guest 中部署 Qwen3-VL-4B W8A8SC、
   vLLM Ascend 和 OpenAI 兼容 API；整卡模式完成 DP4 四并发吞吐验证。
 - **鲲鹏管理驱动**：BMA、HiBMC DRM 和 iBMA 的构建、部署与回退。
@@ -33,6 +35,7 @@ BMA/HiBMC 内核驱动、部署 iBMA 用户态，以及让 Atlas 300I Duo
 | NPU | 2 张 Atlas 300I Duo，4 个 Ascend 310P3 逻辑设备 |
 | vNPU | SMMU/IOMMU、mdev、QEMU 11 Guest、vNPU Guest 驱动和视觉模型推理通过 |
 | 整卡直通 | 2 个 PF、4 个 310P3、物理 Guest 驱动、Qwen3-VL DP4 通过 |
+| 混合模式 | 1 个 PF 整卡直通 DP2，另 1 个 PF 保留 `7/3/1` vNPU 模板 |
 | 虚拟化 | ARM KVM、AAVMF、PVE VM 和 LXC 均通过 |
 
 该组合不是 Proxmox 或服务器厂商对所有鲲鹏机型的正式兼容承诺。内核、
@@ -45,6 +48,7 @@ BIOS、BMC 和硬件拓扑变化后必须重新验证。
 - [iBMA 部署与回滚](docs/ibma-deployment.md)
 - [Atlas 300I Duo vNPU：PVE ARM64 适配与部署](docs/ascend-310p-vnpu-pve.md)
 - [Atlas 300I Duo 整卡直通：PVE ARM64 适配与性能验证](docs/ascend-310p-vfio-pve.md)
+- [Atlas 300I Duo 混合模式：整卡 VFIO 与 vNPU 共存](docs/ascend-310p-mixed-mode-pve.md)
 - [Qwen3-VL：Ascend 310P vNPU 推理部署](docs/qwen3-vl-vnpu.md)
 - [已知问题与上游 Bug](docs/known-issues.md)
 - `patches/`：BMA、HiBMC、qemu-server 和 Ascend 310P 的源码补丁
@@ -64,7 +68,7 @@ BIOS、BMC 和硬件拓扑变化后必须重新验证。
 
 `Proxmox VE ARM64`、`Kunpeng 920`、`Atlas 300I Duo`、`Ascend 310P`、
 `vNPU`、`VFIO mdev`、`VFIO passthrough`、`driver=keep`、`CONFIG_VFIO_MDEV`、`available_instances=0`、
-`Linux 7 driver porting`、`Qwen3-VL Ascend 310P`、`vLLM Ascend`。
+`mixed VFIO vNPU`、`Linux 7 driver porting`、`Qwen3-VL Ascend 310P`、`vLLM Ascend`。
 
 ## 许可证
 

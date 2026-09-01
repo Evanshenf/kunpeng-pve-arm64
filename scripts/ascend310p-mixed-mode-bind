@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+physical_bdfs="${ASCEND_VFIO_BDFS:-}"
+vnpu_bdfs="${ASCEND_VNPU_BDFS:-}"
+timeout_seconds="${ASCEND_BIND_TIMEOUT_SECONDS:-180}"
+reset_guard="/usr/local/sbin/ascend310p-vfio-reset-guard"
+npusmi="${NPUSMI:-/usr/local/sbin/npu-smi}"
+set_vnpu_vm_mode="${ASCEND_SET_VNPU_VM_MODE:-0}"
+
+split_bdfs() {
+    local value="$1"
+
+    [[ -n "$value" ]] || return 0
+    tr ',' '\n' <<< "$value"
+}
+
+validate_bdf() {
+    local bdf="$1"
+
+    [[ "$bdf" =~ ^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$ ]]
+}
+
+driver_name() {
+    local bdf="$1"
+    local path
+
+    path="$(readlink -f "/sys/bus/pci/devices/$bdf/driver" 2>/dev/null || true)"
+    basename "$path"
+}
+
+if [[ $EUID -ne 0 ]]; then
+    echo "This command must run as root" >&2
+    exit 1
+fi
+
+if [[ -z "$physical_bdfs" ]]; then
+    echo "ASCEND_VFIO_BDFS must list at least one physical passthrough BDF" >&2
+    exit 1
+fi
+
+mapfile -t targets < <(split_bdfs "$physical_bdfs")
+mapfile -t vnpu_targets < <(split_bdfs "$vnpu_bdfs")
+
+for bdf in "${targets[@]}" "${vnpu_targets[@]}"; do
+    validate_bdf "$bdf" || {
+        printf 'Invalid PCI BDF: %s\n' "$bdf" >&2
+        exit 1
+    }
+done
+
+modprobe vfio-pci
+
+for bdf in "${targets[@]}"; do
+    device="/sys/bus/pci/devices/$bdf"
+    [[ "$(<"$device/vendor")" == "0x19e5" &&
+       "$(<"$device/device")" == "0xd500" ]] || {
+        printf 'PCI device is not an Ascend 310P: %s\n' "$bdf" >&2
+        exit 1
+    }
+
+    if find "$device" -maxdepth 1 -mindepth 1 \
+        -name '????????-????-????-????-????????????' -print -quit | grep -q .; then
+        printf 'Mediated devices still exist under %s\n' "$bdf" >&2
+        exit 1
+    fi
+
+    printf 'vfio-pci\n' > "$device/driver_override"
+    current_driver="$(driver_name "$bdf")"
+    if [[ "$current_driver" != "vfio-pci" ]]; then
+        if [[ -n "$current_driver" ]]; then
+            printf '%s\n' "$bdf" > "$device/driver/unbind"
+        fi
+        printf '%s\n' "$bdf" > /sys/bus/pci/drivers_probe
+    fi
+
+    deadline=$((SECONDS + timeout_seconds))
+    while (( SECONDS < deadline )); do
+        if [[ "$(driver_name "$bdf")" == "vfio-pci" &&
+              -L "$device/iommu_group" ]]; then
+            group="$(basename "$(readlink -f "$device/iommu_group")")"
+            if [[ -c "/dev/vfio/$group" ]]; then
+                printf 'Ascend 310P %s is bound to vfio-pci in group %s\n' \
+                    "$bdf" "$group"
+                break
+            fi
+        fi
+        sleep 0.2
+    done
+
+    if [[ "$(driver_name "$bdf")" != "vfio-pci" ]]; then
+        printf 'Timed out binding %s to vfio-pci\n' "$bdf" >&2
+        exit 1
+    fi
+done
+
+for bdf in "${vnpu_targets[@]}"; do
+    device="/sys/bus/pci/devices/$bdf"
+    current_driver="$(driver_name "$bdf")"
+    if [[ "$current_driver" == "vfio-pci" ]]; then
+        printf 'vNPU parent %s is unexpectedly bound to vfio-pci\n' "$bdf" >&2
+        exit 1
+    fi
+    printf 'Ascend 310P %s remains available for vNPU (%s)\n' \
+        "$bdf" "${current_driver:-unbound}"
+    if [[ "$set_vnpu_vm_mode" != "1" && ! -d "$device/mdev_supported_types" ]]; then
+        printf 'vNPU types are unavailable on %s\n' "$bdf" >&2
+        exit 1
+    fi
+done
+
+if [[ "$set_vnpu_vm_mode" == "1" && ${#vnpu_targets[@]} -gt 0 ]]; then
+    mode_ready=false
+    deadline=$((SECONDS + timeout_seconds))
+    while (( SECONDS < deadline )); do
+        if "$npusmi" set -t vnpu-mode -d 1; then
+            mode_ready=true
+            break
+        fi
+        sleep 2
+    done
+    if [[ "$mode_ready" != true ]]; then
+        echo "Timed out setting remaining Ascend cards to vNPU VM mode" >&2
+        exit 1
+    fi
+
+    for bdf in "${vnpu_targets[@]}"; do
+        available_path="/sys/bus/pci/devices/$bdf/mdev_supported_types/vnpu-vir04/available_instances"
+        template_ready=false
+        deadline=$((SECONDS + timeout_seconds))
+        while (( SECONDS < deadline )); do
+            if [[ -r "$available_path" && "$(<"$available_path")" -gt 0 ]]; then
+                template_ready=true
+                break
+            fi
+            sleep 1
+        done
+        [[ "$template_ready" == true ]] || {
+            printf 'vNPU VM templates did not become available on %s\n' "$bdf" >&2
+            exit 1
+        }
+        printf 'Ascend 310P %s is ready for VM vNPU creation\n' "$bdf"
+    done
+fi
+
+modprobe ascend310p_no_bus_reset
+"$reset_guard" "${targets[@]}"
