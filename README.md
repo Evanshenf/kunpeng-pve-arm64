@@ -50,6 +50,7 @@ BIOS、BMC 和硬件拓扑变化后必须重新验证。
 - [Atlas 300I Duo 整卡直通：PVE ARM64 适配与性能验证](docs/ascend-310p-vfio-pve.md)
 - [Atlas 300I Duo 混合模式：整卡 VFIO 与 vNPU 共存](docs/ascend-310p-mixed-mode-pve.md)
 - [Qwen3-VL：Ascend 310P vNPU 推理部署](docs/qwen3-vl-vnpu.md)
+- [Qwen3-VL 与 OCR 统一识图平台保姆级教程](docs/qwen3-vl-ocr-complete-guide.md)
 - [已知问题与上游 Bug](docs/known-issues.md)
 - `patches/`：BMA、HiBMC、qemu-server 和 Ascend 310P 的源码补丁
 - `kernel/`：可由 DKMS 重建的最小硬件保护模块

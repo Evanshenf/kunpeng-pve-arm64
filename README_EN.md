@@ -57,6 +57,7 @@ the kernel, BIOS, BMC, or hardware topology.
 - [Atlas 300I Duo full VFIO passthrough on PVE ARM64](docs/en/ascend-310p-vfio-pve.md)
 - [Atlas 300I Duo mixed full-VFIO and vNPU mode](docs/en/ascend-310p-mixed-mode-pve.md)
 - [Qwen3-VL inference on an Ascend 310P vNPU](docs/en/qwen3-vl-vnpu.md)
+- [Complete Chinese Qwen3-VL and OCR platform guide](docs/qwen3-vl-ocr-complete-guide.md)
 - [Known issues and upstream bugs](docs/en/known-issues.md)
 - `patches/`: source patches for BMA, HiBMC, qemu-server, and Ascend 310P
 - `kernel/`: minimal hardware guards that can be rebuilt with DKMS
